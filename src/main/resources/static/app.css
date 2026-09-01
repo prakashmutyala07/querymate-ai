@@ -71,58 +71,85 @@ button { color: inherit; }
 .brand {
   display: flex;
   align-items: center;
-  gap: .72rem;
+  gap: .74rem;
   min-width: 0;
 }
 
 .mark {
-  width: 2.1rem;
-  height: 2.1rem;
+  width: 2.35rem;
+  height: 2.35rem;
   flex: none;
-  border-radius: 10px;
+  border: 1px solid rgba(127, 180, 255, .28);
+  border-radius: 9px;
   display: grid;
   place-items: center;
   background:
-    linear-gradient(135deg, var(--accent), transparent 70%),
-    linear-gradient(315deg, var(--accent-2), #98b7ff);
-  box-shadow: 0 12px 28px rgba(116, 167, 255, .22);
+    radial-gradient(circle at 72% 26%, rgba(57, 208, 191, .28), transparent 30%),
+    linear-gradient(145deg, rgba(37, 99, 235, .28), rgba(18, 24, 33, .96) 58%),
+    var(--surface);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .22), 0 0 0 4px rgba(116, 167, 255, .05);
 }
 
 .mark svg {
-  width: 1.55rem;
-  height: 1.55rem;
+  width: 1.95rem;
+  height: 1.95rem;
   overflow: visible;
 }
 
-.logo-db {
-  fill: rgba(255, 255, 255, .08);
-  stroke: #fff;
-  stroke-width: 1.55;
-}
-
-.logo-db-line,
-.logo-chat {
+.logo-q-ring,
+.logo-q-tail {
   fill: none;
-  stroke: #fff;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.55;
+  stroke-width: 3.1;
+}
+
+.logo-q-tail {
+  stroke-width: 2.9;
+}
+
+.logo-db-body {
+  fill: rgba(57, 208, 191, .12);
+  stroke: rgba(238, 242, 247, .94);
+  stroke-width: 1.45;
+}
+
+.logo-db-lines,
+.logo-node-line {
+  fill: none;
+  stroke: rgba(238, 242, 247, .9);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.logo-node-line {
+  stroke: rgba(57, 208, 191, .76);
+  stroke-width: 1.05;
+}
+
+.logo-node {
+  fill: #39d0bf;
+  stroke: rgba(238, 242, 247, .88);
+  stroke-width: .7;
 }
 
 .logo-spark {
-  fill: #fff;
+  fill: #f3f7ff;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.03rem;
   line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .brand p {
-  margin: .1rem 0 0;
+  margin: .08rem 0 0;
   color: var(--muted);
-  font-size: .78rem;
+  font-size: .76rem;
 }
 
 .session-strip {

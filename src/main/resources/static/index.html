@@ -11,16 +11,30 @@
     <header class="masthead">
         <div class="brand">
             <span class="mark" aria-hidden="true">
-                <svg viewBox="0 0 32 32" role="img">
-                    <path class="logo-db" d="M10 11.5c0-1.8 2.7-3.25 6-3.25s6 1.45 6 3.25v8.8c0 1.8-2.7 3.25-6 3.25s-6-1.45-6-3.25z"/>
-                    <path class="logo-db-line" d="M10 11.5c0 1.8 2.7 3.25 6 3.25s6-1.45 6-3.25M10 16c0 1.8 2.7 3.25 6 3.25s6-1.45 6-3.25"/>
-                    <path class="logo-spark" d="M23.8 6.7l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7zM8 21.2l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z"/>
-                    <path class="logo-chat" d="M7.2 9.3h3.6M7.2 12h2.4"/>
+                <svg viewBox="0 0 40 40">
+                    <defs>
+                        <linearGradient id="querymateLogoGradient" x1="7" y1="5" x2="34" y2="36" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#7fb4ff"/>
+                            <stop offset=".54" stop-color="#39d0bf"/>
+                            <stop offset="1" stop-color="#9b8cff"/>
+                        </linearGradient>
+                    </defs>
+                    <path class="logo-q-ring" stroke="url(#querymateLogoGradient)" d="M20 7.2a12.8 12.8 0 1 0 7.7 23l4 3.8"/>
+                    <path class="logo-q-tail" stroke="url(#querymateLogoGradient)" d="M27.2 27.8l5.6 5.1"/>
+                    <path class="logo-db-body" d="M13.3 16.2c0-1.8 3-3.3 6.7-3.3s6.7 1.5 6.7 3.3v7.1c0 1.8-3 3.3-6.7 3.3s-6.7-1.5-6.7-3.3z"/>
+                    <path class="logo-db-lines" d="M13.3 16.2c0 1.8 3 3.3 6.7 3.3s6.7-1.5 6.7-3.3M13.3 19.8c0 1.8 3 3.3 6.7 3.3s6.7-1.5 6.7-3.3"/>
+                    <path class="logo-node-line" d="M9.8 13.7l3.6-2.2M27.2 10.1l3.2-2.4M29.3 18.3l3.6 1.9"/>
+                    <circle class="logo-node" cx="9.8" cy="13.7" r="1.35"/>
+                    <circle class="logo-node" cx="13.4" cy="11.5" r="1.35"/>
+                    <circle class="logo-node" cx="27.2" cy="10.1" r="1.25"/>
+                    <circle class="logo-node" cx="30.4" cy="7.7" r="1.25"/>
+                    <circle class="logo-node" cx="32.9" cy="20.2" r="1.25"/>
+                    <path class="logo-spark" d="M30.4 13.2l.55 1.35 1.35.55-1.35.55-.55 1.35-.55-1.35-1.35-.55 1.35-.55z"/>
                 </svg>
             </span>
             <div>
                 <h1>QueryMate AI</h1>
-                <p class="subtitle">Ask questions and get answers from your data</p>
+                <p class="subtitle">Ask your database</p>
             </div>
         </div>
         <div class="session-strip" aria-label="Session status">
