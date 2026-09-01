@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>QueryMate AI</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="app-shell">
+    <header class="masthead">
+        <div class="brand">
+            <span class="mark" aria-hidden="true"></span>
+            <div>
+                <h1>QueryMate AI</h1>
+                <p class="subtitle">Ask questions and get answers from your data</p>
+                <p id="connectionStatus">Connecting to data tools...</p>
+            </div>
+        </div>
+        <div class="session-strip" aria-label="Session status">
+            <span><strong id="toolCount">...</strong> tools</span>
+            <span>8 tables</span>
+            <span>Read-only</span>
+            <span id="modelName">Waiting for model</span>
+        </div>
+        <div class="actions">
+            <button id="clearMemoryButton" type="button" class="ghost-button">Clear</button>
+            <button id="newConversationButton" type="button" class="ghost-button primary">New chat</button>
+        </div>
+    </header>
+
+    <main class="workspace">
+        <section id="thread" class="thread" aria-live="polite">
+            <section class="empty" id="emptyState">
+                <p class="eyebrow">QueryMate AI</p>
+                <h2>Ask questions and get answers from your data</h2>
+                <div class="suggestions">
+                    <button type="button" class="suggestion">How many customers are there?</button>
+                    <button type="button" class="suggestion">List 10 customers with their city and loyalty tier.</button>
+                    <button type="button" class="suggestion">What are the top 5 products by total revenue?</button>
+                    <button type="button" class="suggestion">Compare revenue by sales channel and order status.</button>
+                </div>
+            </section>
+        </section>
+
+        <div class="composer-dock">
+            <form id="chatForm" class="composer">
+                <label class="sr-only" for="messageInput">Message</label>
+                <textarea id="messageInput" rows="1" autocomplete="off" placeholder="Ask about customers, orders, products, revenue..."></textarea>
+                <button id="sendButton" type="submit" aria-label="Send">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                    <path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                </button>
+            </form>
+        </div>
+    </main>
+</div>
+<script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+spring:
+  profiles:
+    active: local
+
+app:
+  ai:
+    trace:
+      # Local AI trace. Never enable with sensitive values outside local development.
+      enabled: ${APP_AI_TRACE_ENABLED:true}
+      include-sensitive-values: ${APP_AI_TRACE_INCLUDE_SENSITIVE_VALUES:true}
+      max-payload-chars: ${APP_AI_TRACE_MAX_PAYLOAD_CHARS:20000}
+
+logging:
+  level:
+    com.example.sqlmcpchatopenrouter.chat: INFO
+    com.example.sqlmcpchatopenrouter.security: INFO
+    com.example.sqlmcpchatopenrouter.mcp: INFO

@@ -1,0 +1,105 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: querymate-ai
+  ai:
+    model:
+      chat: openai
+      embedding: none
+    openai:
+      base-url: https://api.openai.com/v1
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        model: ${APP_MODELS_PRIMARY:gpt-4.1-mini}
+    mcp:
+      client:
+        enabled: true
+        name: querymate-ai
+        version: 0.0.1
+        initialized: true
+        request-timeout: 30s
+        type: SYNC
+        # Raw callbacks must NOT become model-level defaults: the SensitiveDataGuard-wrapped
+        # copies are supplied per request instead. See McpToolCatalog.
+        toolcallback:
+          enabled: false
+        streamable-http:
+          connections:
+            dab:
+              url: ${DAB_MCP_BASE_URL:http://localhost:5000}
+              endpoint: ${DAB_MCP_ENDPOINT:/mcp}
+    chat:
+      client:
+        observations:
+          log-prompt: false
+          log-completion: false
+      observations:
+        log-prompt: false
+        log-completion: false
+        include-error-logging: false
+    tools:
+      throw-exception-on-error: false
+      limits:
+        max-calls-per-tool-default: 8
+        max-calls-per-tool:
+          describe_entities: 3
+          read_records: 12
+          aggregate_records: 5
+        max-total-tool-calls: 20
+        on-limit-exceeded: RETURN_ERROR_RESPONSE
+
+app:
+  models:
+    primary: ${APP_MODELS_PRIMARY:gpt-4.1-mini}
+    fallback: ${APP_MODELS_FALLBACK:gpt-4.1-nano}
+  execution:
+    fallback-enabled: ${APP_FALLBACK_ENABLED:true}
+    primary-retry-enabled: ${APP_PRIMARY_RETRY_ENABLED:false}
+    max-completion-tokens: ${APP_MAX_COMPLETION_TOKENS:1200}
+    temperature: ${APP_TEMPERATURE:0.1}
+    request-timeout: ${APP_REQUEST_TIMEOUT:30s}
+    # Supported values: json_schema (provider-enforced) and prompt_json (prompt-enforced).
+    response-format: ${APP_RESPONSE_FORMAT:prompt_json}
+  memory:
+    max-messages: ${APP_MEMORY_MAX_MESSAGES:20}
+  security:
+    token-secret-key: ${TOKEN_SECRET_KEY:}
+  ai:
+    trace:
+      enabled: ${APP_AI_TRACE_ENABLED:false}
+      include-sensitive-values: ${APP_AI_TRACE_INCLUDE_SENSITIVE_VALUES:false}
+      max-payload-chars: ${APP_AI_TRACE_MAX_PAYLOAD_CHARS:20000}
+  # entity.field pairs tokenized before any tool result reaches the model.
+  # City/StateProvince/Country are deliberately NOT listed: they are coarse
+  # geography needed for regional aggregation, not direct identifiers.
+  sensitive-fields:
+    - entity: Customer
+      field: FullName
+      prefix: CU
+    - entity: Customer
+      field: Email
+      prefix: EM
+    - entity: Customer
+      field: Phone
+      prefix: PH
+    - entity: Payment
+      field: TransactionReference
+      prefix: TX
+    - entity: Shipment
+      field: TrackingNumber
+      prefix: TR
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    root: INFO
+    com.example.sqlmcpchatopenrouter: ${APP_LOG_LEVEL:INFO}
+    com.example.sqlmcpchatopenrouter.chat: ${APP_CHAT_LOG_LEVEL:INFO}
+    com.example.sqlmcpchatopenrouter.security: ${APP_SECURITY_LOG_LEVEL:INFO}
+    com.example.sqlmcpchatopenrouter.mcp: ${APP_MCP_LOG_LEVEL:INFO}

@@ -1,0 +1,604 @@
+{
+  "$schema": "https://github.com/Azure/data-api-builder/releases/download/v2.0.12/dab.draft.schema.json",
+  "data-source": {
+    "database-type": "mssql",
+    "connection-string": "@env('ECOM_MSSQL_CONNECTION_STRING')",
+    "options": {
+      "set-session-context": false
+    }
+  },
+  "runtime": {
+    "rest": {
+      "enabled": false,
+      "path": "/api",
+      "request-body-strict": true
+    },
+    "graphql": {
+      "enabled": false,
+      "path": "/graphql",
+      "allow-introspection": true
+    },
+    "mcp": {
+      "enabled": true,
+      "path": "/mcp",
+      "description": "Read-only MCP server for EcommercePocDb e-commerce reporting and analytics.",
+      "dml-tools": {
+        "describe-entities": true,
+        "read-records": true,
+        "aggregate-records": {
+          "enabled": true,
+          "query-timeout": 30
+        },
+        "create-record": false,
+        "update-record": false,
+        "delete-record": false,
+        "execute-entity": false
+      }
+    },
+    "host": {
+      "cors": {
+        "origins": [],
+        "allow-credentials": false
+      },
+      "authentication": {
+        "provider": "Unauthenticated"
+      },
+      "mode": "production"
+    },
+    "telemetry": {
+      "open-telemetry": {
+        "enabled": false,
+        "endpoint": "@env('OTEL_EXPORTER_OTLP_ENDPOINT')",
+        "headers": "@env('OTEL_EXPORTER_OTLP_HEADERS')",
+        "service-name": "@env('OTEL_SERVICE_NAME')"
+      }
+    }
+  },
+  "entities": {
+    "Customer": {
+      "description": "Customer represents people who place orders in the e-commerce store and includes sensitive identity contact data for later redaction testing.",
+      "source": {
+        "object": "dbo.Customer",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "CustomerId",
+          "description": "Primary key. Unique identifier for each customer",
+          "primary-key": true
+        },
+        {
+          "name": "FullName",
+          "description": "Sensitive customer display name used for personalization and redaction testing",
+          "primary-key": false
+        },
+        {
+          "name": "Email",
+          "description": "Sensitive customer email address used for contact and redaction testing",
+          "primary-key": false
+        },
+        {
+          "name": "Phone",
+          "description": "Optional customer phone number for service contact",
+          "primary-key": false
+        },
+        {
+          "name": "City",
+          "description": "Customer city used for geographic sales analysis",
+          "primary-key": false
+        },
+        {
+          "name": "StateProvince",
+          "description": "Customer state or province used for regional analysis",
+          "primary-key": false
+        },
+        {
+          "name": "Country",
+          "description": "Customer country for market reporting",
+          "primary-key": false
+        },
+        {
+          "name": "CreatedDate",
+          "description": "Date the customer account was created",
+          "primary-key": false
+        },
+        {
+          "name": "LoyaltyTier",
+          "description": "Loyalty tier such as Bronze Silver Gold or Platinum",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "Customer",
+          "plural": "Customers"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    },
+    "Category": {
+      "description": "Category represents a merchandising group used to organize products for browsing and sales analysis.",
+      "source": {
+        "object": "dbo.Category",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "CategoryId",
+          "description": "Primary key. Unique identifier for each category",
+          "primary-key": true
+        },
+        {
+          "name": "CategoryName",
+          "description": "Human readable merchandising category name",
+          "primary-key": false
+        },
+        {
+          "name": "Description",
+          "description": "Business description of what products belong in the category",
+          "primary-key": false
+        },
+        {
+          "name": "IsActive",
+          "description": "Indicates whether the category is available for active catalog use",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "Category",
+          "plural": "Categories"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    },
+    "Product": {
+      "description": "Product represents sellable catalog items linked to categories with price cost inventory and availability details.",
+      "source": {
+        "object": "dbo.Product",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "ProductId",
+          "description": "Primary key. Unique identifier for each product",
+          "primary-key": true
+        },
+        {
+          "name": "CategoryId",
+          "description": "Foreign key to Category.CategoryId showing the merchandising group for the product",
+          "primary-key": false
+        },
+        {
+          "name": "ProductName",
+          "description": "Customer facing product name",
+          "primary-key": false
+        },
+        {
+          "name": "SKU",
+          "description": "Stock keeping unit used as the business product code",
+          "primary-key": false
+        },
+        {
+          "name": "UnitPrice",
+          "description": "Current selling price per unit",
+          "primary-key": false
+        },
+        {
+          "name": "Cost",
+          "description": "Internal unit cost used for margin analysis",
+          "primary-key": false
+        },
+        {
+          "name": "InventoryQuantity",
+          "description": "Units currently available in inventory",
+          "primary-key": false
+        },
+        {
+          "name": "IsActive",
+          "description": "Indicates whether the product is currently available for sale",
+          "primary-key": false
+        },
+        {
+          "name": "CreatedDate",
+          "description": "Date the product was added to the catalog",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "Product",
+          "plural": "Products"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    },
+    "Order": {
+      "description": "Order represents a customer purchase transaction with status channel and monetary totals.",
+      "source": {
+        "object": "dbo.[Order]",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "OrderId",
+          "description": "Primary key. Unique identifier for each order",
+          "primary-key": true
+        },
+        {
+          "name": "CustomerId",
+          "description": "Foreign key to Customer.CustomerId showing who placed the order",
+          "primary-key": false
+        },
+        {
+          "name": "OrderDate",
+          "description": "Timestamp when the order was placed",
+          "primary-key": false
+        },
+        {
+          "name": "OrderStatus",
+          "description": "Current order lifecycle status such as Delivered Shipped Processing Returned or Cancelled",
+          "primary-key": false
+        },
+        {
+          "name": "Subtotal",
+          "description": "Sum of order item line totals before tax and shipping",
+          "primary-key": false
+        },
+        {
+          "name": "TaxAmount",
+          "description": "Tax charged for the order",
+          "primary-key": false
+        },
+        {
+          "name": "ShippingAmount",
+          "description": "Shipping fee charged for the order",
+          "primary-key": false
+        },
+        {
+          "name": "TotalAmount",
+          "description": "Final order amount including subtotal tax and shipping",
+          "primary-key": false
+        },
+        {
+          "name": "SalesChannel",
+          "description": "Sales channel where the order was placed",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "Order",
+          "plural": "Orders"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    },
+    "OrderItem": {
+      "description": "OrderItem represents individual line items within an order linking products to orders with quantity and price as the join table between Order and Product.",
+      "source": {
+        "object": "dbo.OrderItem",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "OrderItemId",
+          "description": "Primary key. Unique identifier for each order line",
+          "primary-key": true
+        },
+        {
+          "name": "OrderId",
+          "description": "Foreign key to Order.OrderId showing which order contains the line",
+          "primary-key": false
+        },
+        {
+          "name": "ProductId",
+          "description": "Foreign key to Product.ProductId showing which product was purchased",
+          "primary-key": false
+        },
+        {
+          "name": "Quantity",
+          "description": "Number of product units purchased on this line",
+          "primary-key": false
+        },
+        {
+          "name": "UnitPrice",
+          "description": "Selling price per unit captured at order time",
+          "primary-key": false
+        },
+        {
+          "name": "DiscountAmount",
+          "description": "Discount applied to this line item",
+          "primary-key": false
+        },
+        {
+          "name": "LineTotal",
+          "description": "Final amount for this line after quantity and discount",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "OrderItem",
+          "plural": "OrderItems"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    },
+    "Payment": {
+      "description": "Payment represents payment attempts and captured amounts for customer orders.",
+      "source": {
+        "object": "dbo.Payment",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "PaymentId",
+          "description": "Primary key. Unique identifier for each payment record",
+          "primary-key": true
+        },
+        {
+          "name": "OrderId",
+          "description": "Foreign key to Order.OrderId showing which order the payment belongs to",
+          "primary-key": false
+        },
+        {
+          "name": "PaymentMethod",
+          "description": "Payment instrument or method used by the customer",
+          "primary-key": false
+        },
+        {
+          "name": "PaymentStatus",
+          "description": "Current payment state such as Captured Pending Failed or Voided",
+          "primary-key": false
+        },
+        {
+          "name": "Amount",
+          "description": "Payment amount associated with the order",
+          "primary-key": false
+        },
+        {
+          "name": "PaymentDate",
+          "description": "Timestamp when payment was captured or processed",
+          "primary-key": false
+        },
+        {
+          "name": "TransactionReference",
+          "description": "External payment transaction reference when available",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "Payment",
+          "plural": "Payments"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    },
+    "Shipment": {
+      "description": "Shipment represents fulfillment and delivery tracking details for an order.",
+      "source": {
+        "object": "dbo.Shipment",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "ShipmentId",
+          "description": "Primary key. Unique identifier for each shipment",
+          "primary-key": true
+        },
+        {
+          "name": "OrderId",
+          "description": "Foreign key to Order.OrderId showing which order is being shipped",
+          "primary-key": false
+        },
+        {
+          "name": "Carrier",
+          "description": "Carrier responsible for delivery",
+          "primary-key": false
+        },
+        {
+          "name": "TrackingNumber",
+          "description": "Carrier tracking number when a shipment has been created",
+          "primary-key": false
+        },
+        {
+          "name": "ShipmentStatus",
+          "description": "Current shipment state such as Pending In Transit Delivered Returned or Cancelled",
+          "primary-key": false
+        },
+        {
+          "name": "ShippedDate",
+          "description": "Timestamp when the order shipped",
+          "primary-key": false
+        },
+        {
+          "name": "DeliveryDate",
+          "description": "Timestamp when the order was delivered when applicable",
+          "primary-key": false
+        },
+        {
+          "name": "ShippingCity",
+          "description": "Destination city for the shipment",
+          "primary-key": false
+        },
+        {
+          "name": "ShippingStateProvince",
+          "description": "Destination state or province for the shipment",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "Shipment",
+          "plural": "Shipments"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    },
+    "Review": {
+      "description": "Review represents customer product ratings used for quality sentiment and verified purchase analysis.",
+      "source": {
+        "object": "dbo.Review",
+        "type": "table"
+      },
+      "fields": [
+        {
+          "name": "ReviewId",
+          "description": "Primary key. Unique identifier for each review",
+          "primary-key": true
+        },
+        {
+          "name": "ProductId",
+          "description": "Foreign key to Product.ProductId showing the reviewed product",
+          "primary-key": false
+        },
+        {
+          "name": "CustomerId",
+          "description": "Foreign key to Customer.CustomerId showing who wrote the review",
+          "primary-key": false
+        },
+        {
+          "name": "Rating",
+          "description": "Numeric product rating from 1 to 5",
+          "primary-key": false
+        },
+        {
+          "name": "ReviewTitle",
+          "description": "Short title summarizing the review",
+          "primary-key": false
+        },
+        {
+          "name": "ReviewDate",
+          "description": "Date the review was submitted",
+          "primary-key": false
+        },
+        {
+          "name": "IsVerifiedPurchase",
+          "description": "Indicates whether the reviewer purchased the product before reviewing",
+          "primary-key": false
+        }
+      ],
+      "graphql": {
+        "enabled": false,
+        "type": {
+          "singular": "Review",
+          "plural": "Reviews"
+        }
+      },
+      "rest": {
+        "enabled": false
+      },
+      "permissions": [
+        {
+          "role": "anonymous",
+          "actions": [
+            {
+              "action": "read"
+            }
+          ]
+        }
+      ],
+      "mcp": true
+    }
+  }
+}
