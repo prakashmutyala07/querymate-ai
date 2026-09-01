@@ -48,12 +48,11 @@ class ApplicationResourceTests {
 
     @Test
     void systemPromptExcludesUnrequestedSensitiveFieldsFromCustomerLists() throws Exception {
-        String prompt = read("/prompts/sql-assistant-system.st");
+        String prompt = normalizedPrompt();
 
         assertThat(prompt)
                 .contains("FullName, Email, Phone, TransactionReference, and TrackingNumber")
-                .contains("must not be selected or")
-                .contains("displayed unless the user explicitly asks for them or they are strictly necessary")
+                .contains("must not be selected or displayed unless the user explicitly asks for them or they are strictly necessary")
                 .contains("include CustomerId plus only the requested")
                 .contains("pseudonymized sensitive fields must not be")
                 .contains("selected or displayed merely to support a possible follow-up")
@@ -64,7 +63,7 @@ class ApplicationResourceTests {
 
     @Test
     void systemPromptAllowsExplicitlyRequestedNameOnlyAsASeparateTokenColumn() throws Exception {
-        String prompt = read("/prompts/sql-assistant-system.st");
+        String prompt = normalizedPrompt();
 
         assertThat(prompt)
                 .contains("If the user explicitly requests a sensitive field")
@@ -82,25 +81,26 @@ class ApplicationResourceTests {
 
     @Test
     void systemPromptKeepsStableIdsSeparateFromSensitiveTokens() throws Exception {
-        String prompt = read("/prompts/sql-assistant-system.st");
+        String prompt = normalizedPrompt();
 
         assertThat(prompt)
                 .contains("CustomerId, OrderId, and ProductId must be copied exactly from tool results")
                 .contains("Never invent")
                 .contains("replace, or relabel an ID")
-                .contains("never put a sensitive-field pseudonym such as CU_001 or CU_002")
+                .contains("Never put a sensitive-field pseudonym such as CU_001 or CU_002")
                 .contains("in the CustomerId column or relabel a pseudonym as CustomerId");
     }
 
     @Test
     void systemPromptRequiresExactDescribeEntitiesFieldNames() throws Exception {
-        String prompt = read("/prompts/sql-assistant-system.st");
+        String prompt = normalizedPrompt();
 
         assertThat(prompt)
                 .contains("Never guess DAB field names")
                 .contains("use only the exact field names returned")
-                .contains("Map business concepts from the user, such as \"city,\"")
-                .contains("If the exact field name cannot be identified")
+                .contains("Map business concepts from the user, such as \"city,\" \"status,\" \"sales,\" \"revenue,\" or \"order value,\"")
+                .contains("If multiple exposed fields could match the same business concept")
+                .contains("Do not invent computed fields, derived fields, aliases, or hidden fields")
                 .contains("Call describe_entities for Customer")
                 .contains("Identify the exact exposed field names for customer ID, city, and loyalty tier")
                 .contains("Call read_records with select using only those exact field names")
@@ -109,10 +109,33 @@ class ApplicationResourceTests {
                 .contains("Do not retry with a broad read_records call unless the requested row limit is small");
     }
 
+    @Test
+    void systemPromptRequiresClarificationForUnsupportedDerivedAnalytics() throws Exception {
+        String prompt = normalizedPrompt();
+
+        assertThat(prompt)
+                .contains("DAB aggregate_records can aggregate and group only by fields that are directly exposed")
+                .contains("Do not call aggregate_records with computed expressions such as YEAR(field), MONTH(field)")
+                .contains("If the user asks for a derived grouping such as monthly, yearly, quarterly")
+                .contains("If no exposed grouping field exists, do not invent one")
+                .contains("the current exposed DAB MCP tools/configuration cannot group by that derived value directly")
+                .contains("Use CLARIFICATION, not ERROR")
+                .contains("Monthly sales summary")
+                .contains("Do not call aggregate_records with YEAR(OrderDate), MONTH(OrderDate), FORMAT(OrderDate)")
+                .contains("Return status CLARIFICATION with one precise follow-up question")
+                .contains("Revenue trend by quarter")
+                .contains("Use QUARTER(DateField) in aggregate_records")
+                .contains("Fabricate trend values");
+    }
+
     private static String read(String path) throws Exception {
         try (var input = ApplicationResourceTests.class.getResourceAsStream(path)) {
             assertThat(input).as("classpath resource %s", path).isNotNull();
             return FileCopyUtils.copyToString(new java.io.InputStreamReader(input, StandardCharsets.UTF_8));
         }
+    }
+
+    private static String normalizedPrompt() throws Exception {
+        return read("/prompts/sql-assistant-system.st").replaceAll("\\s+", " ");
     }
 }
