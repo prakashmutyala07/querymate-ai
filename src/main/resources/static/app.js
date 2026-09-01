@@ -1,4 +1,4 @@
-const STORAGE_KEY = "sql-mcp-conversation-id";
+const STORAGE_KEY = "querymate-ai-conversation-id";
 
 const state = {
   conversationId: window.localStorage.getItem(STORAGE_KEY) || "",

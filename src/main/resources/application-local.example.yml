@@ -12,6 +12,6 @@ app:
 
 logging:
   level:
-    com.example.sqlmcpchatopenrouter.chat: INFO
-    com.example.sqlmcpchatopenrouter.security: INFO
-    com.example.sqlmcpchatopenrouter.mcp: INFO
+    com.example.querymateai.chat: INFO
+    com.example.querymateai.security: INFO
+    com.example.querymateai.mcp: INFO

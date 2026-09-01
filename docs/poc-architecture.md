@@ -1,4 +1,4 @@
-# Read-only SQL MCP AI Assistant — POC Architecture
+# QueryMate AI — POC Architecture
 
 ## Executive summary
 
@@ -6,9 +6,9 @@ This proof of concept (POC) lets business users ask natural-language questions a
 
 ## Architecture at a glance
 
-![Read-only SQL MCP AI Assistant — POC architecture](sql-mcp-poc-architecture.png)
+![QueryMate AI — POC architecture](querymate-ai-poc-architecture.png)
 
-The editable source diagram is available at [docs/sql-mcp-poc-architecture.drawio](sql-mcp-poc-architecture.drawio). Open it with [diagrams.net](https://app.diagrams.net) or the draw.io VS Code extension. A vector version is also available at [docs/sql-mcp-poc-architecture.svg](sql-mcp-poc-architecture.svg) for slides and printed handouts.
+The editable source diagram is available at [docs/querymate-ai-poc-architecture.drawio](querymate-ai-poc-architecture.drawio). Open it with [diagrams.net](https://app.diagrams.net) or the draw.io VS Code extension. A vector version is also available at [docs/querymate-ai-poc-architecture.svg](querymate-ai-poc-architecture.svg) for slides and printed handouts.
 
 Reading the diagram in one pass:
 
