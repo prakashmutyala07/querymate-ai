@@ -7,7 +7,7 @@ AI assistant that helps users query enterprise data using natural language.
 - Java: 21
 - Spring Boot: 4.1.1
 - Spring AI BOM: 2.0.1
-- Base package: `com.example.querymateai`
+- Base package: `com.ai.querymateai`
 - MCP transport: Streamable HTTP, configured through `.env`
 - Chat provider: Spring AI OpenAI starter, pointed at OpenAI
 

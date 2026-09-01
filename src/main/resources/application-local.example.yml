@@ -12,6 +12,6 @@ app:
 
 logging:
   level:
-    com.example.querymateai.chat: INFO
-    com.example.querymateai.security: INFO
-    com.example.querymateai.mcp: INFO
+    com.ai.querymateai.chat: INFO
+    com.ai.querymateai.security: INFO
+    com.ai.querymateai.mcp: INFO

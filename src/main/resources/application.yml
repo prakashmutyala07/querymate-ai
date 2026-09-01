@@ -99,7 +99,7 @@ management:
 logging:
   level:
     root: INFO
-    com.example.querymateai: ${APP_LOG_LEVEL:INFO}
-    com.example.querymateai.chat: ${APP_CHAT_LOG_LEVEL:INFO}
-    com.example.querymateai.security: ${APP_SECURITY_LOG_LEVEL:INFO}
-    com.example.querymateai.mcp: ${APP_MCP_LOG_LEVEL:INFO}
+    com.ai.querymateai: ${APP_LOG_LEVEL:INFO}
+    com.ai.querymateai.chat: ${APP_CHAT_LOG_LEVEL:INFO}
+    com.ai.querymateai.security: ${APP_SECURITY_LOG_LEVEL:INFO}
+    com.ai.querymateai.mcp: ${APP_MCP_LOG_LEVEL:INFO}
