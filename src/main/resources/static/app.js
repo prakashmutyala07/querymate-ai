@@ -38,7 +38,7 @@ document.querySelector("#newConversationButton").addEventListener("click", () =>
   thread.replaceChildren(emptyState);
   thread.classList.remove("has-messages");
   emptyState.hidden = false;
-  modelName.textContent = "—";
+  modelName.textContent = "Waiting for model";
 });
 
 document.querySelector("#clearMemoryButton").addEventListener("click", async () => {
@@ -75,10 +75,10 @@ async function loadTools() {
     const response = await fetch("/api/mcp/tools");
     if (!response.ok) throw new Error(String(response.status));
     const tools = await response.json();
-    connectionStatus.textContent = `${tools.length} DAB tools · read-only`;
+    connectionStatus.textContent = "Connected";
     if (toolCount) toolCount.textContent = String(tools.length);
   } catch {
-    connectionStatus.textContent = "DAB MCP unavailable";
+    connectionStatus.textContent = "DAB unavailable";
     if (toolCount) toolCount.textContent = "0";
   }
 }
@@ -134,20 +134,49 @@ function addUserTurn(text) {
 }
 
 /**
- * One assistant turn. Steps stream in live, then collapse behind a
- * "Show steps" disclosure so the finished answer stands alone.
+ * One assistant turn. Progress events stay in the assistant message as a
+ * vertical thinking timeline, followed by the final answer/table content.
  */
 function addAssistantTurn() {
   const wrap = document.createElement("div");
   wrap.className = "turn";
 
+  const card = document.createElement("div");
+  card.className = "assistant-message";
+
+  const topline = document.createElement("div");
+  topline.className = "assistant-topline";
+  const name = document.createElement("span");
+  name.className = "assistant-name";
+  name.textContent = "QueryMate AI";
+  const meta = document.createElement("span");
+  meta.textContent = "Thinking";
+  const dots = document.createElement("span");
+  dots.className = "loading-dots";
+  dots.setAttribute("aria-hidden", "true");
+  dots.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+  topline.append(name, meta, dots);
+
   const list = document.createElement("ol");
   list.className = "steps";
-  wrap.append(list);
+
+  const stepToggle = document.createElement("button");
+  stepToggle.type = "button";
+  stepToggle.className = "step-toggle";
+  stepToggle.textContent = "Show execution steps";
+  stepToggle.hidden = true;
+  stepToggle.addEventListener("click", () => {
+    const expanded = card.classList.toggle("show-steps");
+    stepToggle.textContent = expanded ? "Hide execution steps" : "Show execution steps";
+  });
+
+  card.append(topline, stepToggle, list);
+  wrap.append(card);
   thread.append(wrap);
   scrollToEnd();
 
   let current = null;
+  let complete = false;
 
   return {
     step(text) {
@@ -166,16 +195,15 @@ function addAssistantTurn() {
     },
 
     finish() {
+      if (complete) return;
+      complete = true;
       if (current) current.classList.remove("active");
-      if (!list.children.length || list.dataset.collapsed) return;
-      list.dataset.collapsed = "1";
-      const details = document.createElement("details");
-      details.className = "trace";
-      const summary = document.createElement("summary");
-      summary.textContent = `Show steps (${list.children.length})`;
-      details.append(summary);
-      list.replaceWith(details);
-      details.append(list);
+      meta.textContent = "Answer ready";
+      dots.hidden = true;
+      if (list.children.length) {
+        card.classList.add("is-complete");
+        stepToggle.hidden = false;
+      }
     },
 
     renderAnswer(payload) {
@@ -191,11 +219,11 @@ function addAssistantTurn() {
         const p = document.createElement("div");
         p.className = payload.status === "ERROR" ? "answer error" : "answer";
         p.textContent = payload.message;
-        wrap.append(p);
+        card.append(p);
       }
 
       if (payload.columns?.length && payload.rows?.length) {
-        wrap.append(renderTable(payload.columns, payload.rows));
+        card.append(renderTable(payload.columns, payload.rows));
       }
 
       const notes = [];
@@ -212,16 +240,18 @@ function addAssistantTurn() {
           note.append(badge);
         }
         note.append(document.createTextNode(notes.join(" ")));
-        wrap.append(note);
+        card.append(note);
       }
       scrollToEnd();
     },
 
     renderError(text) {
+      meta.textContent = "Request failed";
+      dots.hidden = true;
       const p = document.createElement("div");
       p.className = "answer error";
       p.textContent = text;
-      wrap.append(p);
+      card.append(p);
       scrollToEnd();
     }
   };
@@ -274,5 +304,5 @@ function autoGrow() {
 }
 
 function scrollToEnd() {
-  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
 }
