@@ -19,6 +19,19 @@ Reading the diagram in one pass:
 | Model | The OpenAI API interprets the request through the primary `gpt-4.1-mini` model, with `gpt-4.1-nano` available as fallback. The model returns text, structured content, or tool intent; it has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs. |
 | Data access | The Spring Boot application invokes approved DAB MCP describe, read, and aggregate operations through `SecureMcpToolCallback`. Microsoft Data API Builder mediates configured SQL Server entities, and SQL Server access is read-only. |
 
+## Numbered workflow
+
+1. Business user asks a natural-language question through the Chat UI.
+2. Chat UI sends the request to the QueryMate AI Application.
+3. The application applies request validation, PII protection, and safety controls.
+4. The application sends only the required masked prompt/context to the LLM.
+5. The LLM returns text, structured response, or tool intent to the application.
+6. If data is required, the application invokes approved DAB MCP tools through the secure tool boundary.
+7. Microsoft DAB reads approved data from SQL Server using read-only access.
+8. Tool results are protected before any further model interaction.
+9. The application uses the protected result with the LLM if needed to prepare the final answer.
+10. The application rehydrates placeholders inside the application boundary and returns the final response to the UI.
+
 ## Interactive Layer-by-Layer Query Flow
 
 Use this walkthrough to see what each layer receives, how it transforms the request or data, and what it sends to the next layer.
