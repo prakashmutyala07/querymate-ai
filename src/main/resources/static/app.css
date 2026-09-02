@@ -79,15 +79,14 @@ button { color: inherit; }
   width: 2.35rem;
   height: 2.35rem;
   flex: none;
-  border: 1px solid rgba(127, 180, 255, .28);
+  border: 1px solid rgba(116, 167, 255, .24);
   border-radius: 9px;
   display: grid;
   place-items: center;
   background:
-    radial-gradient(circle at 72% 26%, rgba(57, 208, 191, .28), transparent 30%),
-    linear-gradient(145deg, rgba(37, 99, 235, .28), rgba(18, 24, 33, .96) 58%),
+    linear-gradient(145deg, rgba(116, 167, 255, .18), rgba(18, 24, 33, .96) 62%),
     var(--surface);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, .22), 0 0 0 4px rgba(116, 167, 255, .05);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .2), 0 0 0 4px rgba(57, 208, 191, .04);
 }
 
 .mark svg {
@@ -96,46 +95,32 @@ button { color: inherit; }
   overflow: visible;
 }
 
-.logo-q-ring,
-.logo-q-tail {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 3.1;
-}
-
-.logo-q-tail {
-  stroke-width: 2.9;
-}
-
-.logo-db-body {
-  fill: rgba(57, 208, 191, .12);
+.logo-bubble {
+  fill: rgba(37, 99, 235, .1);
   stroke: rgba(238, 242, 247, .94);
-  stroke-width: 1.45;
-}
-
-.logo-db-lines,
-.logo-node-line {
-  fill: none;
-  stroke: rgba(238, 242, 247, .9);
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.35;
 }
 
-.logo-node-line {
-  stroke: rgba(57, 208, 191, .76);
-  stroke-width: 1.05;
+.logo-data-line {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
-.logo-node {
-  fill: #39d0bf;
-  stroke: rgba(238, 242, 247, .88);
-  stroke-width: .7;
+.logo-data-line-strong {
+  stroke: var(--accent);
 }
 
 .logo-spark {
-  fill: #f3f7ff;
+  fill: #9b8cff;
+}
+
+.logo-spark-dot {
+  fill: var(--accent-2);
 }
 
 .brand h1 {
