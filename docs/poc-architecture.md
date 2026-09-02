@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-This proof of concept (POC) lets business users ask natural-language questions about SQL Server data through an existing chat interface. A single Spring Boot coordinator applies system instructions, sanitized conversation context, request-local PII protection, secure MCP tool boundaries, and structured-response handling. The OpenAI API provides the active model path, using `gpt-4.1-mini` as the primary model with `gpt-4.1-nano` as a simple fallback. The LLM interprets the request but never connects directly to the database: approved Microsoft Data API Builder (DAB) MCP tools mediate access, mutation tools are disabled, and SQL Server access is read-only. Authentication and enterprise authorization are future production capabilities, not features of the current POC.
+This proof of concept (POC) lets business users ask natural-language questions about SQL Server data through an existing chat interface. A single Spring Boot coordinator applies system instructions, sanitized conversation context, request-local PII protection, secure MCP tool boundaries, and structured-response handling. The OpenAI API provides the active model path, using `gpt-4.1-mini` as the primary model with `gpt-4.1-nano` as a simple fallback. The LLM helps interpret the request, but it does not directly access DAB, MCP tools, SQL Server, websites, or internal APIs. Tool execution is handled by the Spring Boot application through the guarded MCP tool boundary. DAB remains the controlled data access layer between the application and SQL Server, mutation tools are disabled, and SQL Server access is read-only. Authentication and enterprise authorization are future production capabilities, not features of the current POC.
 
 ## Architecture at a glance
 
@@ -16,8 +16,8 @@ Reading the diagram in one pass:
 |---|---|
 | User experience | A business user asks questions through the chat UI. Authentication / OIDC is shown as a future production capability, not part of the current POC. |
 | AI application | The QueryMate AI Application coordinates the request, applies safety and governance controls, protects MCP tool boundaries, and returns a structured response for the UI. |
-| Model | The OpenAI API interprets the request through the primary `gpt-4.1-mini` model, with `gpt-4.1-nano` available as fallback. The model has no direct database access. |
-| Data access | DAB MCP tools expose approved describe, read, and aggregate operations through Microsoft Data API Builder. SQL Server access is read-only. |
+| Model | The OpenAI API interprets the request through the primary `gpt-4.1-mini` model, with `gpt-4.1-nano` available as fallback. The model returns text, structured content, or tool intent; it has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs. |
+| Data access | The Spring Boot application invokes approved DAB MCP describe, read, and aggregate operations through `SecureMcpToolCallback`. Microsoft Data API Builder mediates configured SQL Server entities, and SQL Server access is read-only. |
 
 ## Interactive Layer-by-Layer Query Flow
 
@@ -31,7 +31,7 @@ Use this walkthrough to see what each layer receives, how it transforms the requ
 
 **Request-Local PII Context:** Creates a token context for each chat turn so reversible mappings stay inside the application boundary and are discarded after the turn.
 
-**Secure MCP Tool Boundary:** Detokenizes model tool arguments only immediately before approved DAB MCP execution; the model never talks directly to DAB or SQL Server.
+**Secure MCP Tool Boundary:** Detokenizes model tool intent only immediately before approved DAB MCP execution; the model never talks directly to DAB, MCP tools, SQL Server, websites, or internal APIs.
 
 **Tool Result Protection:** Protects raw DAB/MCP results before the model continues, so database PII is not sent back to the external model.
 
@@ -72,8 +72,9 @@ sequenceDiagram
     Coordinator->>Coordinator: Apply sanitized conversation context
     Coordinator->>Runner: Run protected request
     Runner->>Client: Supply prompt, memory, and guarded tools
-    Client->>LLM: Request interpretation and answer via gpt-4.1-mini
-    LLM-->>Client: Request an approved MCP tool
+    Client->>LLM: Send protected prompt and context via gpt-4.1-mini
+    LLM-->>Client: Return text, structured response, or tool intent
+    Note over LLM,MCP: LLM has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs.
     Client->>ToolGuard: Invoke guarded tool callback
     ToolGuard->>Context: Detokenize only at tool boundary
     ToolGuard->>MCP: Invoke describe, read, or aggregate
@@ -98,7 +99,8 @@ sequenceDiagram
 
 ## Safety controls
 
-- The LLM does not directly access SQL Server.
+- The LLM does not directly access DAB, MCP tools, SQL Server, websites, or internal APIs.
+- Tool execution is handled by the Spring Boot application through the guarded MCP tool boundary.
 - DAB MCP exposes only approved describe, read, and aggregate tools; mutation tools are disabled.
 - SQL Server access uses a dedicated read-only database role.
 - PII is protected in user input, model output, and database tool results.
@@ -129,8 +131,8 @@ The diagram uses business-facing labels. This table keeps the responsibilities a
 | SensitivePayloadProtector | Protects raw DAB/MCP tool results before they return to the model. |
 | ToolCallIntent | Supports MCP tool intent and diagnostic handoff messages. |
 | Structured Response | Formats status, message, columns, rows, and notes for the UI. |
-| OpenAI API | Provides the primary `gpt-4.1-mini` model and fallback `gpt-4.1-nano`; the model requests approved tools and has no direct database connection. |
-| DAB MCP Tools | Provides approved describe, read, and aggregate operations. |
+| OpenAI API | Provides the primary `gpt-4.1-mini` model and fallback `gpt-4.1-nano`; the model returns text, structured content, or tool intent and has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs. |
+| DAB MCP Tools | Provides approved describe, read, and aggregate operations invoked only by the application-side guarded MCP boundary. |
 | Microsoft Data API Builder | Mediates the configured entities and permitted data operations. |
 | SQL Server | Stores source data and enforces read-only access. |
 | Authentication / OIDC | Future production capability; not included in the current POC. |
@@ -152,4 +154,4 @@ The diagram uses business-facing labels. This table keeps the responsibilities a
 
 ## How to explain this POC in one minute
 
-> This POC demonstrates a controlled way to connect AI with enterprise SQL data. The user asks a natural-language question. The Spring Boot application applies request-local PII protection, secure MCP tool boundaries, strong instructions, conversation context, and structured response handling. The OpenAI API helps interpret the request through the primary model, but it does not directly access the database. Data access happens only through Microsoft DAB MCP tools using read-only SQL Server access.
+> This POC demonstrates a controlled way to connect AI with enterprise SQL data. The user asks a natural-language question. The Spring Boot application applies request-local PII protection, secure MCP tool boundaries, strong instructions, conversation context, and structured response handling. The OpenAI API helps interpret the request through the primary model, but it does not directly access DAB, MCP tools, SQL Server, websites, or internal APIs. Data access happens only when the application invokes Microsoft DAB MCP tools using read-only SQL Server access.

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1450" height="900" viewBox="0 0 1450 900" role="img" aria-labelledby="title desc">
   <title id="title">QueryMate AI - POC Architecture</title>
-  <desc id="desc">Management architecture showing business user, chat UI, Spring Boot AI application, OpenAI API, secure MCP tool boundary, Data API Builder, and read-only SQL Server access.</desc>
+  <desc id="desc">Management architecture showing natural-language questions, application-controlled LLM orchestration, a secure MCP boundary, Data API Builder, and read-only SQL Server access.</desc>
   <defs>
     <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
       <path d="M2,2 L10,6 L2,10 Z" fill="#334155"/>
@@ -33,7 +33,7 @@
 
   <rect width="1450" height="900" fill="#ffffff"/>
   <text x="60" y="50" class="title">QueryMate AI - POC Architecture</text>
-  <text x="60" y="80" class="subtitle">Ask questions and get answers from your data</text>
+  <text x="60" y="80" class="subtitle">Management view: natural-language questions, application-controlled LLM orchestration, secure MCP boundary, and approved read-only data access</text>
 
   <text x="255" y="342" text-anchor="middle" class="band" fill="#3f5f91">User Experience</text>
   <rect x="70" y="390" width="150" height="70" rx="6" fill="#e8f1ff" stroke="#5b7cba" stroke-width="2"/>
@@ -87,9 +87,11 @@
   <text x="1070" y="417" text-anchor="middle" class="box-body" fill="#7f6000">Primary: gpt-4.1-mini</text>
   <text x="1070" y="437" text-anchor="middle" class="box-body" fill="#7f6000">Fallback: gpt-4.1-nano</text>
 
-  <rect x="970" y="535" width="200" height="58" fill="#fdecea" stroke="#c62828" stroke-width="2" stroke-dasharray="4 4"/>
-  <text x="1070" y="560" text-anchor="middle" class="box-title" fill="#b71c1c">LLM has no direct</text>
-  <text x="1070" y="580" text-anchor="middle" class="box-title" fill="#b71c1c">database access</text>
+  <rect x="950" y="515" width="250" height="100" fill="#fdecea" stroke="#c62828" stroke-width="2" stroke-dasharray="4 4"/>
+  <text x="1075" y="541" text-anchor="middle" class="box-body" font-weight="700" fill="#b71c1c">LLM has no direct access to</text>
+  <text x="1075" y="559" text-anchor="middle" class="box-body" font-weight="700" fill="#b71c1c">DAB, MCP tools, SQL Server,</text>
+  <text x="1075" y="577" text-anchor="middle" class="box-body" font-weight="700" fill="#b71c1c">websites, or internal APIs.</text>
+  <text x="1075" y="598" text-anchor="middle" class="box-body" fill="#b71c1c">Tool execution is controlled by the application.</text>
 
   <text x="1305" y="342" text-anchor="middle" class="band" fill="#0e5c61">Data Access</text>
   <rect x="1220" y="365" width="190" height="80" rx="6" fill="#d5f0f3" stroke="#0e8088" stroke-width="2"/>
@@ -111,7 +113,13 @@
   <path class="edge-green" d="M807 308 L807 324 L713 324 L713 340"/>
   <path class="edge-green" d="M713 475 L713 500"/>
   <path class="edge" d="M890 529 L940 529 L940 408 L960 408"/>
-  <path class="edge" d="M1180 408 L1220 405"/>
+  <path class="edge" d="M960 432 L940 432 L940 548 L890 548"/>
+  <rect x="872" y="472" width="139" height="34" fill="#ffffff" stroke="none"/>
+  <text x="941.5" y="486" text-anchor="middle" class="box-body" fill="#334155">Text / structured response</text>
+  <text x="941.5" y="501" text-anchor="middle" class="box-body" fill="#334155">or tool intent</text>
+  <path class="edge-green" d="M890 455 L930 455 L930 330 L1315 330 L1315 365"/>
+  <rect x="1030" y="318" width="135" height="20" fill="#ffffff" stroke="none"/>
+  <text x="1097.5" y="333" text-anchor="middle" class="box-body" fill="#2e7d32">Approved tool execution</text>
   <path class="edge-teal" d="M1315 445 L1315 640 L945 640 L945 690"/>
   <path class="edge-blue" d="M830 730 L760 730"/>
   <path d="M355 316 L355 390" fill="none" stroke="#8a8f98" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow)"/>

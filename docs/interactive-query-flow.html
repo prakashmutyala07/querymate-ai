@@ -468,7 +468,7 @@
 
     <section class="principles" aria-label="Architecture principles">
       <div class="principle"><span class="principle-title">PII Protected</span><span class="principle-text">Sensitive values are tokenized before external model use.</span></div>
-      <div class="principle"><span class="principle-title">Read Only</span><span class="principle-text">The model can request approved read tools, not direct database access.</span></div>
+      <div class="principle"><span class="principle-title">Read Only</span><span class="principle-text">The model can return tool intent; the application controls read-only execution.</span></div>
       <div class="principle"><span class="principle-title">Structured Output</span><span class="principle-text">Responses return predictable status, text, rows, warnings, and notes.</span></div>
       <div class="principle"><span class="principle-title">Sanitized Memory</span><span class="principle-text">Conversation history stores protected content for safer follow-ups.</span></div>
     </section>
@@ -525,11 +525,11 @@
       </article>
       <article class="note-card">
         <h3>External Model Boundary</h3>
-        <p>The OpenAI API receives protected customer tokens rather than raw name, email, or phone values.</p>
+        <p>The OpenAI API receives protected customer tokens rather than raw name, email, or phone values, and has no direct access to tools or data systems.</p>
       </article>
       <article class="note-card">
         <h3>Governed Data Access</h3>
-        <p>MCP and DAB mediate SQL Server access through approved read-only operations.</p>
+        <p>The application invokes approved MCP tools, DAB mediates configured entities, and SQL Server access remains read-only.</p>
       </article>
       <article class="note-card">
         <h3>Policy-Aware UI</h3>
@@ -571,19 +571,19 @@
         name: "Spring AI + LLM",
         category: "AI Model",
         type: "model",
-        summary: "Spring AI sends protected context and tool definitions to the OpenAI API.",
-        input: "Protected user message:\ngive me details of customer CU_3398e6\n\nAvailable tools:\naggregate_records\ndescribe_entities\nread_records",
-        does: "Spring AI ChatClient calls the OpenAI API with the protected request. The primary model is gpt-4.1-mini, with gpt-4.1-nano available as a simple fallback. The model can plan which tool to call, but it cannot connect directly to SQL Server and does not receive raw customer PII.",
-        output: "Model intent:\nFind the Customer record that corresponds to the protected customer token, then return profile fields in the required structured response format.\n\nModel provider:\nprovider = OpenAI API\nmodel = gpt-4.1-mini\nfallback = gpt-4.1-nano\nresponseFormat = PROMPT_JSON"
+        summary: "Spring AI sends protected context to the OpenAI API and receives text, structured response, or tool intent.",
+        input: "Protected user message:\ngive me details of customer CU_3398e6\n\nApplication-controlled tool boundary:\naggregate_records\ndescribe_entities\nread_records",
+        does: "Spring AI ChatClient calls the OpenAI API with the protected request. The primary model is gpt-4.1-mini, with gpt-4.1-nano available as a simple fallback. The model can return tool intent, but it cannot connect directly to DAB, MCP tools, SQL Server, websites, or internal APIs and does not receive raw customer PII.",
+        output: "Model output:\nText, structured response, or tool intent to find the Customer record that corresponds to the protected customer token.\n\nModel provider:\nprovider = OpenAI API\nmodel = gpt-4.1-mini\nfallback = gpt-4.1-nano\nresponseFormat = PROMPT_JSON"
       },
       {
         name: "Approved MCP Tool Call",
         category: "AI Application",
         type: "app",
-        summary: "SecureMcpToolCallback mediates model tool requests before data access.",
-        input: "Model-generated tool call using protected token:\nread_records(Customer, filter containing CU_3398e6)",
-        does: "SecureMcpToolCallback receives the model tool arguments, detokenizes only at the secure tool boundary, calls DAB MCP, and prevents the model from directly accessing DAB or SQL Server. Retries or corrections can happen within this stage when the model tries an invalid filter, an invalid field selection, or an empty lookup.",
-        output: "DAB receives a real lookup value only after secure resolution:\nFullName = Ethan Thomas\n\nBoundary detail:\nModel sends a protected token.\nSecureMcpToolCallback resolves it immediately before DAB MCP execution.\nThe model never receives direct DAB or SQL Server access."
+        summary: "SecureMcpToolCallback mediates tool intent before data access.",
+        input: "Model-returned tool intent using protected token:\nread_records(Customer, filter containing CU_3398e6)",
+        does: "SecureMcpToolCallback receives the tool intent, detokenizes only at the secure tool boundary, calls DAB MCP, and prevents the model from directly accessing DAB, MCP tools, SQL Server, websites, or internal APIs. Retries or corrections can happen within this stage when the model returns an invalid filter, an invalid field selection, or an empty lookup.",
+        output: "DAB receives a real lookup value only after secure resolution:\nFullName = Ethan Thomas\n\nBoundary detail:\nModel returns a protected-token tool intent.\nSecureMcpToolCallback resolves it immediately before DAB MCP execution.\nThe model never receives direct DAB, MCP tool, SQL Server, website, or internal API access."
       },
       {
         name: "Microsoft DAB + SQL Server",
@@ -591,7 +591,7 @@
         type: "data",
         summary: "Data API Builder executes configured read-only access to SQL Server.",
         input: "Approved DAB read request:\nEntity = Customer\nLookup value = Ethan Thomas\nOperation = read",
-        does: "Microsoft Data API Builder maps the approved entity request to SQL Server under configured permissions. The LLM is not connected to the database; the data platform only sees the resolved lookup from the application boundary.",
+        does: "Microsoft Data API Builder maps the approved entity request to SQL Server under configured permissions. The LLM is not connected to DAB, MCP tools, SQL Server, websites, or internal APIs; the data platform only sees the resolved lookup from the application boundary.",
         output: "Raw DB result returned to the application:\nCustomerId = 11\nFullName = Ethan Thomas\nEmail = ...\nPhone = ...\nCity = Portland\nStateProvince = Oregon\nCountry = United States\nCreatedDate = 2025-03-01\nLoyaltyTier = Gold"
       },
       {

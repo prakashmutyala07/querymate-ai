@@ -14,7 +14,9 @@ Microsoft Data API Builder acts as the controlled data access layer between the 
 
 This POC provides a chatbot interface where users can ask database-related questions in natural language.
 
-At a high level, the application receives the user question from the UI, processes it through the Spring Boot backend, interacts with the LLM using Spring AI, accesses database information through Microsoft DAB, and returns a natural language response to the user.
+At a high level, the application receives the user question from the UI, processes it through the Spring Boot backend, interacts with the LLM using Spring AI, invokes approved tools through the guarded MCP boundary when database context is needed, accesses database information through Microsoft DAB, and returns a natural language response to the user.
+
+The LLM helps interpret the request, but it does not directly access DAB, MCP tools, SQL Server, websites, or internal APIs. Tool execution is handled by the Spring Boot application through the guarded MCP tool boundary.
 
 The current focus is on:
 
@@ -36,7 +38,7 @@ The current focus is on:
 | Spring AI | Integrates the application with LLM providers |
 | Microsoft Data API Builder | Acts as the controlled data access layer for SQL Server |
 | SQL Server | Source database for the POC |
-| Public LLM Provider | Used in the initial phase to validate LLM-based response generation |
+| Public LLM Provider | Used in the initial phase to validate LLM-based response generation; it has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs |
 | PII Masking / Rehydration Layer | Protects sensitive values before and after LLM interaction |
 | CA-GIP LLM-as-a-Service | Planned company LLM service evaluation in Phase 3 |
 
@@ -58,7 +60,7 @@ Phase 1 focused on proving the basic end-to-end chatbot flow.
 
 In this phase, the application allowed users to ask questions through a chatbot UI. The backend application used Spring AI to interact with a public LLM provider and return natural language responses.
 
-Microsoft DAB and SQL Server were part of the database access flow, helping validate how the application can work with structured data in a controlled manner.
+Microsoft DAB and SQL Server were part of the database access flow, helping validate how the application can work with structured data in a controlled manner. DAB remains the controlled data access layer between the application and SQL Server.
 
 ### What Was Implemented
 
@@ -152,14 +154,15 @@ Current request flow:
 
 1. User enters a question in the chatbot UI.
 2. Spring Boot application receives the request.
-3. Application uses Spring AI to coordinate the LLM interaction.
-4. Application accesses required database context through Microsoft DAB.
-5. Microsoft DAB interacts with SQL Server using the configured entities and access rules.
-6. Application identifies and masks sensitive values before sending content to the LLM.
-7. Masked content is sent to the LLM.
-8. LLM returns a response using placeholders.
-9. Application rehydrates the placeholders with original values.
-10. Final response is shown to the user in the chatbot UI.
+3. Application identifies and masks sensitive values before sending content to the LLM.
+4. Application uses Spring AI to send the protected prompt or masked context to the LLM.
+5. LLM returns text, structured response, or tool intent to the application.
+6. Application-side `SecureMcpToolCallback` / guardrail invokes approved DAB MCP tools when database context is needed.
+7. DAB MCP tools call Microsoft Data API Builder.
+8. Microsoft DAB interacts with SQL Server using the configured entities and read-only access rules.
+9. Raw sensitive database results are protected/masked before any model continuation.
+10. Application rehydrates placeholders with original values inside the application boundary.
+11. Final response is shown to the user in the chatbot UI.
 
 ---
 
@@ -168,6 +171,8 @@ Current request flow:
 Microsoft Data API Builder is an important component in this POC.
 
 It acts as the controlled data access layer between the Spring Boot application and SQL Server.
+
+The LLM does not directly call Microsoft DAB. The Spring Boot application invokes approved DAB MCP tools through the guarded MCP boundary, and those tools call Microsoft DAB.
 
 In this POC, DAB helps with:
 
@@ -194,6 +199,8 @@ Key security considerations include:
 - Sensitive columns should be reviewed before exposure.
 - Sensitive values should be masked before LLM calls.
 - Rehydration should happen only inside the application.
+- The LLM should not directly access DAB, MCP tools, SQL Server, websites, or internal APIs.
+- Tool execution should be handled by the Spring Boot application through the guarded MCP tool boundary.
 - Logs should avoid storing sensitive raw data unnecessarily.
 - LLM credentials and database credentials should not be hardcoded.
 - Environment variables or secure secret management should be used.
@@ -295,7 +302,7 @@ This POC started as a chatbot UI integrated with Spring Boot, Spring AI, Microso
 
 Phase 1 validated the basic chatbot and LLM-based response generation flow. After the initial demo, architects raised concerns about sensitive data being sent to a public LLM.
 
-To address this, Phase 2 introduced PII masking and rehydration. Sensitive values are masked before sending content to the LLM and restored inside the application before showing the final response to the user.
+To address this, Phase 2 introduced PII masking and rehydration. Sensitive values are masked before sending content to the LLM and restored only inside the application boundary before showing the final response to the user.
 
 The next planned step is Phase 3. In Phase 3, the POC will be extended to connect with the Unicorn project database and selected Unicorn tables. In parallel, CA-GIP LLM-as-a-Service will be evaluated as a company-approved LLM option.
 
