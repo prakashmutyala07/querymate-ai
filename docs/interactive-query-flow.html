@@ -468,7 +468,7 @@
 
     <section class="principles" aria-label="Architecture principles">
       <div class="principle"><span class="principle-title">PII Protected</span><span class="principle-text">Sensitive values are tokenized before external model use.</span></div>
-      <div class="principle"><span class="principle-title">Read Only</span><span class="principle-text">The model can return tool intent; the application controls read-only execution.</span></div>
+      <div class="principle"><span class="principle-title">Read Only</span><span class="principle-text">The model can return a tool request; the application controls read-only execution.</span></div>
       <div class="principle"><span class="principle-title">Structured Output</span><span class="principle-text">Responses return predictable status, text, rows, warnings, and notes.</span></div>
       <div class="principle"><span class="principle-title">Sanitized Memory</span><span class="principle-text">Conversation history stores protected content for safer follow-ups.</span></div>
     </section>
@@ -571,19 +571,19 @@
         name: "Spring AI + LLM",
         category: "AI Model",
         type: "model",
-        summary: "Spring AI sends protected context to the OpenAI API and receives text, structured response, or tool intent.",
+        summary: "Spring AI sends protected context to the OpenAI API and receives text, structured response, or tool request.",
         input: "Protected user message:\ngive me details of customer CU_3398e6\n\nApplication-controlled tool boundary:\naggregate_records\ndescribe_entities\nread_records",
-        does: "Spring AI ChatClient calls the OpenAI API with the protected request. The primary model is gpt-4.1-mini, with gpt-4.1-nano available as a simple fallback. The model can return tool intent, but it cannot connect directly to DAB, MCP tools, SQL Server, websites, or internal APIs and does not receive raw customer PII.",
-        output: "Model output:\nText, structured response, or tool intent to find the Customer record that corresponds to the protected customer token.\n\nModel provider:\nprovider = OpenAI API\nmodel = gpt-4.1-mini\nfallback = gpt-4.1-nano\nresponseFormat = PROMPT_JSON"
+        does: "Spring AI ChatClient calls the OpenAI API with the protected request. The primary model is gpt-4.1-mini, with gpt-4.1-nano available as a simple fallback. The model can return a tool request, but it cannot connect directly to DAB, MCP tools, SQL Server, websites, or internal APIs and does not receive raw customer PII.",
+        output: "Model output:\nText, structured response, or tool request to find the Customer record that corresponds to the protected customer token.\n\nModel provider:\nprovider = OpenAI API\nmodel = gpt-4.1-mini\nfallback = gpt-4.1-nano\nresponseFormat = PROMPT_JSON"
       },
       {
         name: "Approved MCP Tool Call",
         category: "AI Application",
         type: "app",
-        summary: "SecureMcpToolCallback mediates tool intent before data access.",
-        input: "Model-returned tool intent using protected token:\nread_records(Customer, filter containing CU_3398e6)",
-        does: "SecureMcpToolCallback receives the tool intent, detokenizes only at the secure tool boundary, calls DAB MCP, and prevents the model from directly accessing DAB, MCP tools, SQL Server, websites, or internal APIs. Retries or corrections can happen within this stage when the model returns an invalid filter, an invalid field selection, or an empty lookup.",
-        output: "DAB receives a real lookup value only after secure resolution:\nFullName = Ethan Thomas\n\nBoundary detail:\nModel returns a protected-token tool intent.\nSecureMcpToolCallback resolves it immediately before DAB MCP execution.\nThe model never receives direct DAB, MCP tool, SQL Server, website, or internal API access."
+        summary: "SecureMcpToolCallback mediates tool requests before data access.",
+        input: "Model-returned tool request using protected token:\nread_records(Customer, filter containing CU_3398e6)",
+        does: "SecureMcpToolCallback receives the tool request, detokenizes only at the secure tool boundary, calls DAB MCP, and prevents the model from directly accessing DAB, MCP tools, SQL Server, websites, or internal APIs. Retries or corrections can happen within this stage when the model returns an invalid filter, an invalid field selection, or an empty lookup.",
+        output: "DAB receives a real lookup value only after secure resolution:\nFullName = Ethan Thomas\n\nBoundary detail:\nModel returns a protected-token tool request.\nSecureMcpToolCallback resolves it immediately before DAB MCP execution.\nThe model never receives direct DAB, MCP tool, SQL Server, website, or internal API access."
       },
       {
         name: "Microsoft DAB + SQL Server",

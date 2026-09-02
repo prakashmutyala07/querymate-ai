@@ -156,7 +156,7 @@ Current request flow:
 2. Spring Boot application receives the request.
 3. Application identifies and masks sensitive values before sending content to the LLM.
 4. Application uses Spring AI to send the protected prompt or masked context to the LLM.
-5. LLM returns text, structured response, or tool intent to the application.
+5. LLM returns text, structured response, or tool request to the application.
 6. Application-side `SecureMcpToolCallback` / guardrail invokes approved DAB MCP tools when database context is needed.
 7. DAB MCP tools call Microsoft Data API Builder.
 8. Microsoft DAB interacts with SQL Server using the configured entities and read-only access rules.

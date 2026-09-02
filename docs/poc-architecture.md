@@ -10,13 +10,15 @@ This proof of concept (POC) lets business users ask natural-language questions a
 
 The editable source diagram is available at [docs/querymate-ai-poc-architecture.drawio](querymate-ai-poc-architecture.drawio). Open it with [diagrams.net](https://app.diagrams.net) or the draw.io VS Code extension. A vector version is also available at [docs/querymate-ai-poc-architecture.svg](querymate-ai-poc-architecture.svg) for slides and printed handouts.
 
+The main diagram is intentionally management-level and avoids internal Spring class details. Class-level flow remains in the technical appendix below.
+
 Reading the diagram in one pass:
 
 | Band | What it shows |
 |---|---|
 | User experience | A business user asks questions through the chat UI. Authentication / OIDC is shown as a future production capability, not part of the current POC. |
 | AI application | The QueryMate AI Application coordinates the request, applies safety and governance controls, protects MCP tool boundaries, and returns a structured response for the UI. |
-| Model | The OpenAI API interprets the request through the primary `gpt-4.1-mini` model, with `gpt-4.1-nano` available as fallback. The model returns text, structured content, or tool intent; it has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs. |
+| Model | The OpenAI API interprets the request through the primary `gpt-4.1-mini` model, with `gpt-4.1-nano` available as fallback. The model returns text, structured content, or a tool request; it has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs. |
 | Data access | The Spring Boot application invokes approved DAB MCP describe, read, and aggregate operations through `SecureMcpToolCallback`. Microsoft Data API Builder mediates configured SQL Server entities, and SQL Server access is read-only. |
 
 ## Numbered workflow
@@ -25,7 +27,7 @@ Reading the diagram in one pass:
 2. Chat UI sends the request to the QueryMate AI Application.
 3. The application validates the request and applies PII protection.
 4. The application sends only masked prompt/context to the LLM.
-5. The LLM returns text, structured response, or tool intent to the application.
+5. The LLM returns text, structured response, or a tool request to the application.
 6. If data is required, the application invokes approved DAB MCP tools through the secure tool boundary.
 7. Microsoft DAB reads approved data from SQL Server using read-only access.
 8. Tool results return to the application through DAB/MCP.
@@ -44,7 +46,7 @@ Use this walkthrough to see what each layer receives, how it transforms the requ
 
 **Request-Local PII Context:** Creates a token context for each chat turn so reversible mappings stay inside the application boundary and are discarded after the turn.
 
-**Secure MCP Tool Boundary:** Detokenizes model tool intent only immediately before approved DAB MCP execution; the model never talks directly to DAB, MCP tools, SQL Server, websites, or internal APIs.
+**Secure MCP Tool Boundary:** Detokenizes model tool requests only immediately before approved DAB MCP execution; the model never talks directly to DAB, MCP tools, SQL Server, websites, or internal APIs.
 
 **Tool Result Protection:** Protects raw DAB/MCP results before the model continues, so database PII is not sent back to the external model.
 
@@ -86,7 +88,7 @@ sequenceDiagram
     Coordinator->>Runner: Run protected request
     Runner->>Client: Supply prompt, memory, and guarded tools
     Client->>LLM: Send protected prompt and context via gpt-4.1-mini
-    LLM-->>Client: Return text, structured response, or tool intent
+    LLM-->>Client: Return text, structured response, or tool request
     Note over LLM,MCP: LLM has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs.
     Client->>ToolGuard: Invoke guarded tool callback
     ToolGuard->>Context: Detokenize only at tool boundary
@@ -142,9 +144,9 @@ The diagram uses business-facing labels. This table keeps the responsibilities a
 | SensitiveTokenStore | Keeps request-local reversible token mappings inside the application boundary. |
 | SecureMcpToolCallback | Secure boundary around MCP/DAB tool execution; detokenizes only before the approved tool call. |
 | SensitivePayloadProtector | Protects raw DAB/MCP tool results before they return to the model. |
-| ToolCallIntent | Supports MCP tool intent and diagnostic handoff messages. |
+| ToolCallIntent | Supports MCP tool request and diagnostic handoff messages. |
 | Structured Response | Formats status, message, columns, rows, and notes for the UI. |
-| OpenAI API | Provides the primary `gpt-4.1-mini` model and fallback `gpt-4.1-nano`; the model returns text, structured content, or tool intent and has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs. |
+| OpenAI API | Provides the primary `gpt-4.1-mini` model and fallback `gpt-4.1-nano`; the model returns text, structured content, or a tool request and has no direct access to DAB, MCP tools, SQL Server, websites, or internal APIs. |
 | DAB MCP Tools | Provides approved describe, read, and aggregate operations invoked only by the application-side guarded MCP boundary. |
 | Microsoft Data API Builder | Mediates the configured entities and permitted data operations. |
 | SQL Server | Stores source data and enforces read-only access. |
