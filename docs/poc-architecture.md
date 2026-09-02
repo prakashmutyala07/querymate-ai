@@ -23,13 +23,13 @@ Reading the diagram in one pass:
 
 1. Business user asks a natural-language question through the Chat UI.
 2. Chat UI sends the request to the QueryMate AI Application.
-3. The application applies request validation, PII protection, and safety controls.
-4. The application sends only the required masked prompt/context to the LLM.
+3. The application validates the request and applies PII protection.
+4. The application sends only masked prompt/context to the LLM.
 5. The LLM returns text, structured response, or tool intent to the application.
 6. If data is required, the application invokes approved DAB MCP tools through the secure tool boundary.
 7. Microsoft DAB reads approved data from SQL Server using read-only access.
-8. Tool results are protected before any further model interaction.
-9. The application uses the protected result with the LLM if needed to prepare the final answer.
+8. Tool results return to the application through DAB/MCP.
+9. Tool results are protected before any further LLM interaction.
 10. The application rehydrates placeholders inside the application boundary and returns the final response to the UI.
 
 ## Interactive Layer-by-Layer Query Flow
