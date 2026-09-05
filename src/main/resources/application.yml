@@ -50,6 +50,8 @@ spring:
         on-limit-exceeded: RETURN_ERROR_RESPONSE
 
 app:
+  chat:
+    max-message-chars: ${APP_CHAT_MAX_MESSAGE_CHARS:8000}
   models:
     primary: ${APP_MODELS_PRIMARY:gpt-4.1-mini}
     fallback: ${APP_MODELS_FALLBACK:gpt-4.1-nano}
