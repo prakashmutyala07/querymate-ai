@@ -1,6 +1,9 @@
 package com.ai.querymateai.config;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -9,7 +12,7 @@ public record AppProperties(Models models, Execution execution, Memory memory,
         Security security, Logging logging, Ai ai, List<SensitiveField> sensitiveFields) {
 
     public AppProperties {
-        security = security == null ? new Security(null) : security;
+        security = security == null ? new Security(null, null, null) : security;
         logging = logging == null ? new Logging(false) : logging;
         ai = ai == null ? new Ai(null) : ai;
         sensitiveFields = sensitiveFields == null ? List.of() : List.copyOf(sensitiveFields);
@@ -42,10 +45,41 @@ public record AppProperties(Models models, Execution execution, Memory memory,
      * nothing when a record offers it a choice, which would leave the data policy empty and
      * deny-by-default protecting every column.
      */
-    public record Security(DataPolicy dataPolicy) {
+    public record Security(DataPolicy dataPolicy, Detection detection, Limits limits) {
 
         public Security {
-            dataPolicy = dataPolicy == null ? new DataPolicy(null, null, null, null) : dataPolicy;
+            dataPolicy = dataPolicy == null ? new DataPolicy(null, null, null, null, null) : dataPolicy;
+            detection = detection == null ? new Detection(null, false) : detection;
+            limits = limits == null ? new Limits(null, null, null) : limits;
+        }
+    }
+
+    /** Configuration for the local, in-process free-text detectors. */
+    public record Detection(String phoneRegion, boolean requirePersonNameModel) {
+
+        public Detection {
+            phoneRegion = phoneRegion == null || phoneRegion.isBlank()
+                    ? "US" : phoneRegion.strip().toUpperCase(Locale.ROOT);
+        }
+    }
+
+    /** Hard safety and latency bounds for privacy processing. */
+    public record Limits(Integer maxToolResultBytes, Integer maxEgressBytes, Integer maxRows) {
+
+        private static final int DEFAULT_MAX_TOOL_RESULT_BYTES = 1_000_000;
+
+        private static final int DEFAULT_MAX_EGRESS_BYTES = 2_000_000;
+
+        private static final int DEFAULT_MAX_ROWS = 100;
+
+        public Limits {
+            maxToolResultBytes = positiveOrDefault(maxToolResultBytes, DEFAULT_MAX_TOOL_RESULT_BYTES);
+            maxEgressBytes = positiveOrDefault(maxEgressBytes, DEFAULT_MAX_EGRESS_BYTES);
+            maxRows = positiveOrDefault(maxRows, DEFAULT_MAX_ROWS);
+        }
+
+        private static int positiveOrDefault(Integer value, int fallback) {
+            return value == null || value < 1 ? fallback : value;
         }
     }
 
@@ -66,7 +100,8 @@ public record AppProperties(Models models, Execution execution, Memory memory,
      * @param rowDataTools tools returning database rows; others (schema discovery) are left alone
      */
     public record DataPolicy(List<String> safeColumns, List<String> rowArrayKeys,
-            List<String> sensitiveNumericColumns, List<String> rowDataTools) {
+            List<String> sensitiveNumericColumns, List<String> rowDataTools,
+            Map<String, List<String>> safeFieldsByEntity) {
 
         private static final List<String> DEFAULT_ROW_ARRAY_KEYS = List.of("value", "result");
 
@@ -78,6 +113,7 @@ public record AppProperties(Models models, Execution execution, Memory memory,
             rowArrayKeys = lowerCased(rowArrayKeys, DEFAULT_ROW_ARRAY_KEYS);
             sensitiveNumericColumns = lowerCased(sensitiveNumericColumns, List.of());
             rowDataTools = lowerCased(rowDataTools, DEFAULT_ROW_DATA_TOOLS);
+            safeFieldsByEntity = normalizedFieldsByEntity(safeFieldsByEntity);
         }
 
         /** True when a column's value may be forwarded to the model without protection. */
@@ -97,9 +133,36 @@ public record AppProperties(Models models, Execution execution, Memory memory,
             return toolName != null && this.rowDataTools.contains(toolName.toLowerCase(java.util.Locale.ROOT));
         }
 
+        public boolean isSafeField(String entity, String field) {
+            if (entity != null && field != null) {
+                List<String> fields = this.safeFieldsByEntity.get(entity.toLowerCase(Locale.ROOT));
+                if (fields != null && fields.contains(field.toLowerCase(Locale.ROOT))) {
+                    return true;
+                }
+            }
+            return isSafeColumn(field);
+        }
+
         private static List<String> lowerCased(List<String> values, List<String> fallback) {
             List<String> source = (values == null || values.isEmpty()) ? fallback : values;
             return source.stream().map(value -> value.toLowerCase(java.util.Locale.ROOT)).toList();
+        }
+
+        private static Map<String, List<String>> normalizedFieldsByEntity(Map<String, List<String>> source) {
+            if (source == null || source.isEmpty()) {
+                return Map.of();
+            }
+            Map<String, List<String>> normalized = new LinkedHashMap<>();
+            source.forEach((entity, fields) -> {
+                if (entity == null || entity.isBlank()) {
+                    throw new IllegalArgumentException("Privacy policy entity names must not be blank.");
+                }
+                String key = entity.strip().toLowerCase(Locale.ROOT);
+                if (normalized.putIfAbsent(key, lowerCased(fields, List.of())) != null) {
+                    throw new IllegalArgumentException("Duplicate privacy policy entity: " + entity);
+                }
+            });
+            return Map.copyOf(normalized);
         }
     }
 

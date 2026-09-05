@@ -12,6 +12,7 @@ import org.springframework.mock.env.MockEnvironment;
 
 import com.ai.querymateai.chat.ChatResponse;
 import com.ai.querymateai.config.AppProperties;
+import com.ai.querymateai.mcp.ToolCallIntent;
 import com.ai.querymateai.trace.LocalAiTraceLogger;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -25,7 +26,7 @@ class SensitiveDataGuardTests {
     private static final String REAL_PHONE = "415-555-0101";
 
     private static final String PROTECTED_PATTERN =
-            "\\b(?:CustomerName|Email|Phone|SensitiveValue)Protected#\\d+\\b";
+            "\\[PII:(?:NAME|EMAIL|PHONE|VALUE):[A-Za-z0-9_-]{16}:\\d+]";
 
     private static final String TOOL_RESULT = """
             {"value":[
@@ -48,7 +49,7 @@ class SensitiveDataGuardTests {
                 new AppProperties.Security(new AppProperties.DataPolicy(
                         List.of("CustomerId", "OrderId", "count", "City", "StateProvince", "Country",
                                 "LoyaltyTier", "Status"),
-                        null, null, null)),
+                        null, null, null, null), null, null),
                 new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(false, false, 20_000)),
                 List.of(new AppProperties.SensitiveField("Customer", "FullName", null),
@@ -79,9 +80,24 @@ class SensitiveDataGuardTests {
         };
     }
 
+    private static String firstProtectedToken(String text) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(PROTECTED_PATTERN).matcher(text);
+        assertThat(matcher.find()).as("expected a protected token in %s", text).isTrue();
+        return matcher.group();
+    }
+
+    private static java.util.List<String> protectedTokens(String text) {
+        java.util.ArrayList<String> tokens = new java.util.ArrayList<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(PROTECTED_PATTERN).matcher(text);
+        while (matcher.find()) {
+            tokens.add(matcher.group());
+        }
+        return tokens;
+    }
+
     @Test
     void inputEmailPhoneAndFullNameAreProtectedBeforeModelCall() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String protectedInput = session.protectInput(
                 "Find customer John Smith with john.smith@example.com or phone 415-555-0101.");
@@ -97,7 +113,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void adjacentProtectedNamePartsAreCollapsedIntoOneSearchableFullName() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String protectedInput = session.protectInput("Find customer Ethan Thomas");
 
@@ -111,7 +127,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void multipleAndRepeatedPiiValuesAreProtectedWithShortTokens() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String protectedInput = session.protectInput(
                 "Email john.smith@example.com, backup john.smith@example.com, phone 415-555-0101.");
@@ -123,61 +139,62 @@ class SensitiveDataGuardTests {
 
     @Test
     void sameSensitiveValueReusesSameTokenAcrossOneRequest() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String protectedInput = session.protectInput("Find customer Ethan Thomas");
         String protectedResult = session.wrap(new ToolCallback[] {
                 stubCallback("{\"value\":[{\"CustomerId\":11,\"FullName\":\"Ethan Thomas\"}]}")
         })[0].call("{\"entity\":\"Customer\"}");
+        String token = firstProtectedToken(protectedInput);
 
-        assertThat(protectedInput).contains("CustomerNameProtected#1");
-        assertThat(protectedResult).contains("CustomerNameProtected#1")
-                .doesNotContain("CustomerNameProtected#2")
+        assertThat(protectedInput).contains(token);
+        assertThat(protectedResult).contains(token)
                 .doesNotContain("Ethan Thomas");
     }
 
     @Test
     void alreadyProtectedTokensAreNotProtectedAgain() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         String protectedInput = session.protectInput("Find customer Ethan Thomas");
+        String token = firstProtectedToken(protectedInput);
 
-        String protectedOutput = session.protectOutput("Found customer CustomerNameProtected#1.");
+        String protectedOutput = session.protectOutput("Found customer " + token + ".");
 
-        assertThat(protectedInput).contains("CustomerNameProtected#1");
-        assertThat(protectedOutput).isEqualTo("Found customer CustomerNameProtected#1.");
+        assertThat(protectedInput).contains(token);
+        assertThat(protectedOutput).isEqualTo("Found customer " + token + ".");
     }
 
     @Test
     void uiResponseShowsNamesAndMasksContactDetails() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         String protectedName = session.protectStructuredCell("FullName", "Ethan Thomas");
         String protectedEmail = session.protectStructuredCell("Email", "ethan.thomas@example.com");
         String protectedPhone = session.protectStructuredCell("Phone", "415-555-0101");
         ChatResponse protectedResponse = new ChatResponse("conversation", "model", false,
-                ChatResponse.Status.ANSWER, "Customer CustomerNameProtected#999 was found.",
-                List.of("CustomerId", "CustomerNameProtected", "EmailProtected", "PhoneProtected"),
+                ChatResponse.Status.ANSWER, "Customer " + protectedName + " was found.",
+                List.of("CustomerId", "FullName", "Email", "Phone"),
                 List.of(List.of("11", protectedName, protectedEmail, protectedPhone)),
                 true, false, ChatResponse.UNKNOWN_TOTAL, "Contact " + protectedEmail + " or " + protectedPhone, "");
 
         ChatResponse uiResponse = session.toUiResponse(protectedResponse);
 
-        assertThat(uiResponse.message()).isEqualTo("Customer Ethan Thomas was found.");
+        assertThat(uiResponse.message()).isEqualTo("Customer E*** T*** was found.");
         assertThat(uiResponse.columns()).containsExactly("CustomerId", "FullName", "Email", "Phone");
-        assertThat(uiResponse.rows().getFirst()).containsExactly("11", "Ethan Thomas",
+        assertThat(uiResponse.rows().getFirst()).containsExactly("11", "E*** T***",
                 "eth***@example.com", "415***01");
         assertThat(uiResponse.dataNotes()).isEqualTo("Contact eth***@example.com or 415***01");
     }
 
     @Test
     void normalQueryWithoutPiiPassesThrough() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         assertThat(session.protectInput("show total orders by city")).isEqualTo("show total orders by city");
     }
 
     @Test
     void protectedToolArgumentsAreDecryptedOnlyForDab() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         String protectedFilter = session.protectInput("FullName eq 'John Smith'");
         AtomicReference<String> dabInput = new AtomicReference<>();
         ToolCallback delegate = new ToolCallback() {
@@ -202,7 +219,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void customerFullNameDetailsRequestRestoresOnlyTheActualNameForExactFilter() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         String protectedMessage = session.protectInput("customer details of Mason Taylor");
         java.util.ArrayList<String> dabInputs = new java.util.ArrayList<>();
         ToolCallback delegate = new ToolCallback() {
@@ -222,20 +239,21 @@ class SensitiveDataGuardTests {
                         """;
             }
         };
+        String token = firstProtectedToken(protectedMessage);
 
         String result = session.wrap(new ToolCallback[] { delegate })[0]
                 .call("{\"entity\":\"Customer\",\"select\":\"CustomerId,FullName,City\","
-                        + "\"filter\":\"FullName eq 'CustomerNameProtected#1'\",\"first\":1}");
+                        + "\"filter\":\"FullName eq '" + token + "'\",\"first\":1}");
 
-        assertThat(protectedMessage).contains("CustomerNameProtected#1");
+        assertThat(protectedMessage).contains(token);
         assertThat(dabInputs).hasSize(1);
         assertThat(dabInputs.getFirst()).contains("FullName eq 'Mason Taylor'");
-        assertThat(result).contains("CustomerNameProtected#1", "Portland").doesNotContain("Mason Taylor");
+        assertThat(result).contains(token, "Portland").doesNotContain("Mason Taylor");
     }
 
     @Test
     void decryptionFailureIsWithheldBeforeDab() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         AtomicBoolean called = new AtomicBoolean(false);
         ToolCallback delegate = new ToolCallback() {
             @Override
@@ -252,7 +270,7 @@ class SensitiveDataGuardTests {
         };
 
         String result = session.wrap(new ToolCallback[] { delegate })[0]
-                .call("{\"filter\":\"Email eq 'EmailProtected#999'\"}");
+                .call("{\"filter\":\"Email eq '[PII:EMAIL:ABCDEFGHIJKLMNOP:999]'\"}");
 
         assertThat(called).isFalse();
         assertThat(result).contains("invalid protected value").doesNotContain("john.smith");
@@ -260,7 +278,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void rawSensitiveValuesNeverReachTheModelPayload() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         ToolCallback guarded = session.wrap(new ToolCallback[] { stubCallback(TOOL_RESULT) })[0];
 
         String modelBoundPayload = guarded.call("{\"entity\":\"Customer\"}");
@@ -273,8 +291,6 @@ class SensitiveDataGuardTests {
                 .containsPattern(PROTECTED_PATTERN)
                 .contains("Austin")
                 .contains("\"CustomerId\":1");
-        assertThat(session.restoreProtectedValues(modelBoundPayload))
-                .contains(REAL_NAME, REAL_EMAIL, REAL_PHONE, "Sam Patel");
     }
 
     @Test
@@ -284,7 +300,7 @@ class SensitiveDataGuardTests {
                 {\\"CustomerId\\":1,\\"FullName\\":\\"John Smith\\",\\"Email\\":\\"john.smith@example.com\\",\
                 \\"Phone\\":\\"415-555-0101\\",\\"City\\":\\"Austin\\"}]}}"}],"isError":false}
                 """;
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(envelope) })[0]
                 .call("{\"entity\":\"Customer\"}");
@@ -298,35 +314,36 @@ class SensitiveDataGuardTests {
     void modelProseIsNotMangledByThePersonNameHeuristic() {
         // Regression: the name heuristic used to fire on ordinary words following "customer",
         // rewriting the model's own sentence into tokens. Output protection must leave prose alone.
-        SensitiveRequestContext session = this.guard.newSession();
-        session.protectInput("lookup customer record of " + REAL_NAME);
+        PrivacySession session = this.guard.newSession();
+        String protectedInput = session.protectInput("lookup customer record of " + REAL_NAME);
+        String token = firstProtectedToken(protectedInput);
 
         String answer = session.protectOutput(
-                "No customer record was found matching the name CustomerNameProtected#1 "
+                "No customer record was found matching the name " + token + " "
                         + "in the currently approved data access configuration.");
         String dataNotes = session.protectOutput(
                 "The search was performed on the Customer FullName field as the filter.");
 
         assertThat(answer).isEqualTo("No customer record was found matching the name "
-                + "CustomerNameProtected#1 in the currently approved data access configuration.");
+                + token + " in the currently approved data access configuration.");
         assertThat(dataNotes).isEqualTo("The search was performed on the Customer FullName field as the filter.");
     }
 
     @Test
     void outputStillProtectsContactDetailsTheModelEmits() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String answer = session.protectOutput("Reach them at " + REAL_EMAIL + " or " + REAL_PHONE + ".");
 
         assertThat(answer).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE)
-                .contains("EmailProtected#1", "PhoneProtected#1");
+                .containsPattern(PROTECTED_PATTERN);
     }
 
     @Test
     void outputProtectionDoesNotVaultOrdinaryWordsThatWouldBlockEgress() {
         // Junk vault entries are not cosmetic: the egress firewall blocks any outbound payload
         // containing a vaulted value, and "FullName" appears throughout the system prompt.
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         session.protectOutput("The search was performed on the Customer FullName field as the filter.");
 
@@ -338,12 +355,14 @@ class SensitiveDataGuardTests {
         // Deny-by-default protects many columns now. A fixed placeholder would make every
         // protected cell in a row look identical and the table unreadable.
         String toolResult = "{\"value\":[{\"TaxId\":\"AB-123-XYZ\",\"Notes\":\"Prefers morning delivery\"}]}";
-        SensitiveRequestContext session = this.guard.newSession();
-        session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0].call("{\"entity\":\"Customer\"}");
+        PrivacySession session = this.guard.newSession();
+        String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
+                .call("{\"entity\":\"Customer\"}");
+        java.util.List<String> tokens = protectedTokens(modelBoundPayload);
 
         ChatResponse response = new ChatResponse("c", "m", false, ChatResponse.Status.ANSWER, "ok",
                 List.of("TaxId", "Notes"),
-                List.of(List.of("SensitiveValueProtected#1", "SensitiveValueProtected#2")),
+                List.of(List.of(tokens.get(0), tokens.get(1))),
                 true, false, ChatResponse.UNKNOWN_TOTAL, "", "");
         ChatResponse ui = session.toUiResponse(response);
 
@@ -355,48 +374,49 @@ class SensitiveDataGuardTests {
         // TaxId is configured nowhere. Deny-by-default means it is protected anyway, which is
         // the whole point: a column added by a later migration must fail closed.
         String toolResult = "{\"value\":[{\"CustomerId\":1,\"TaxId\":\"AB-123-XYZ\",\"City\":\"Austin\"}]}";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
                 .call("{\"entity\":\"Customer\"}");
 
         assertThat(modelBoundPayload).doesNotContain("AB-123-XYZ")
-                .contains("SensitiveValueProtected#1")
+                .containsPattern(PROTECTED_PATTERN)
                 .contains("Austin")
                 .contains("\"CustomerId\":1");
-        assertThat(session.restoreProtectedValues(modelBoundPayload)).contains("AB-123-XYZ");
     }
 
     @Test
     void unclassifiedNumericColumnIsProtectedUnlessExplicitlySafe() {
         String toolResult = "{\"value\":[{\"CustomerId\":1,\"NumericTaxId\":123456789}]}";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
                 .call("{\"entity\":\"Customer\"}");
 
-        assertThat(modelBoundPayload).contains("\"CustomerId\":1", "SensitiveValueProtected#1")
+        assertThat(modelBoundPayload).contains("\"CustomerId\":1")
+                .containsPattern(PROTECTED_PATTERN)
                 .doesNotContain("123456789");
     }
 
     @Test
     void aggregateResultArrayUsesDenyByDefaultProtection() {
         String toolResult = "{\"result\":[{\"ConfidentialGroup\":\"North-Secret\",\"count\":2}]}";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(
                 new ToolCallback[] { stubCallback(toolResult, "aggregate_records") })[0]
                 .call("{\"entity\":\"Customer\",\"function\":\"count\",\"field\":\"*\","
                         + "\"groupby\":[\"ConfidentialGroup\"]}");
 
-        assertThat(modelBoundPayload).contains("SensitiveValueProtected#1", "\"count\":2")
+        assertThat(modelBoundPayload).contains("\"count\":2")
+                .containsPattern(PROTECTED_PATTERN)
                 .doesNotContain("North-Secret");
     }
 
     @Test
     void unrecognisedRowDataShapeIsWithheld() {
         String toolResult = "{\"rows\":[{\"UnknownSecret\":\"raw-secret\"}]}";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
                 .call("{\"entity\":\"Customer\"}");
@@ -409,14 +429,14 @@ class SensitiveDataGuardTests {
     void envelopeFieldsOutsideTheRowArrayAreLeftIntact() {
         String toolResult = "{\"entity\":\"Customer\",\"message\":\"Query completed\","
                 + "\"status\":\"success\",\"result\":{\"value\":[{\"FullName\":\"John Smith\"}]}}";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
                 .call("{\"entity\":\"Customer\"}");
 
         assertThat(modelBoundPayload).contains("Query completed", "success", "Customer")
                 .doesNotContain(REAL_NAME)
-                .contains("CustomerNameProtected#1");
+                .containsPattern(PROTECTED_PATTERN);
     }
 
     @Test
@@ -425,7 +445,7 @@ class SensitiveDataGuardTests {
         // model unable to learn which fields exist.
         String schema = "{\"value\":[{\"name\":\"FullName\",\"type\":\"string\","
                 + "\"description\":\"Customer full name\"}]}";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(
                 new ToolCallback[] { stubCallback(schema, "describe_entities") })[0]
@@ -437,7 +457,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void unparseableToolResultIsWithheldRatherThanForwarded() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         ToolCallback guarded = session.wrap(new ToolCallback[] { stubCallback("<html>John Smith</html>") })[0];
 
         String modelBoundPayload = guarded.call("{\"entity\":\"Customer\"}");
@@ -448,7 +468,7 @@ class SensitiveDataGuardTests {
     @Test
     void unparseableTextInsideMcpEnvelopeIsWithheld() {
         String envelope = "{\"content\":[{\"type\":\"text\",\"text\":\"{John Smith\"}],\"isError\":false}";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(envelope) })[0].call("{}");
 
@@ -457,7 +477,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void finalOutputProtectionCatchesProviderEmittedPii() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
 
         String protectedOutput = session.protectOutput(
                 "Contact John Smith at john.smith@example.com or 415-555-0101.");
@@ -465,22 +485,23 @@ class SensitiveDataGuardTests {
         assertThat(protectedOutput)
                 .doesNotContain(REAL_NAME, REAL_EMAIL, REAL_PHONE)
                 .containsPattern(PROTECTED_PATTERN);
-        assertThat(session.restoreProtectedValues(protectedOutput)).contains(REAL_NAME, REAL_EMAIL, REAL_PHONE);
+        assertThat(protectedOutput).doesNotContain(REAL_NAME, REAL_EMAIL, REAL_PHONE);
     }
 
     @Test
     void toolIntentLogsNeverIncludeFilterValues() {
-        String rendered = ToolCallIntent.render(JsonMapper.builder().build(),
-                "{\"entity\":\"Customer\",\"filter\":\"FullName eq 'John Smith'\"}");
+        String rendered = ToolCallIntent.parse(JsonMapper.builder().build(), "read_records",
+                "{\"entity\":\"Customer\",\"filter\":\"FullName eq 'John Smith'\"}").renderSafe();
 
         assertThat(rendered).contains("Customer", "<redacted>").doesNotContain("John Smith");
     }
 
     @Test
     void secureBoundaryLogsCanCountResolvedProtectedValuesWithoutValues() {
-        int resolved = ToolCallIntent.resolvedTokenCount(
-                "{\"filter\":\"Email eq 'EmailProtected#1' and Phone eq 'PhoneProtected#1'\"}",
-                "{\"filter\":\"Email eq 'x@example.test' and Phone eq '555-0101'\"}");
+        PrivacySession session = this.guard.newSession();
+        String protectedInput = session.protectInput("Find john.smith@example.com or 415-555-0101");
+        int resolved = session.resolvedProtectedValueCount(protectedInput,
+                session.restoreProtectedValues(protectedInput));
 
         assertThat(resolved).isEqualTo(2);
     }
@@ -491,12 +512,16 @@ class SensitiveDataGuardTests {
     private static final String ORDER_COUNT =
             "{\"entity\":\"Order\",\"result\":[{\"count\":120}],\"status\":\"success\"}";
 
+    private static final String ORDER_COUNT_AS_STRING =
+            "{\"entity\":\"Order\",\"result\":[{\"count\":\"120\"}],\"message\":\"Successfully aggregated records\","
+                    + "\"status\":\"success\"}";
+
     private static final String CUSTOMER_COUNT =
             "{\"entity\":\"Customer\",\"result\":[{\"count\":40}],\"status\":\"success\"}";
 
     @Test
     void totalCountIsReadFromTheCountingToolResult() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         ToolCallback[] tools = session.wrap(new ToolCallback[] {
                 stubCallback(ORDER_ROWS, "read_records"), stubCallback(ORDER_COUNT, "aggregate_records") });
 
@@ -508,7 +533,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void totalCountIsReadThroughTheMcpContentEnvelope() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         String enveloped = "{\"content\":[{\"type\":\"text\",\"text\":"
                 + JsonMapper.builder().build().writeValueAsString(ORDER_COUNT) + "}]}";
         ToolCallback[] tools = session.wrap(new ToolCallback[] { stubCallback(enveloped, "aggregate_records") });
@@ -519,8 +544,21 @@ class SensitiveDataGuardTests {
     }
 
     @Test
+    void stringCountFromDabEnvelopeStaysVisibleAndRecordsTotal() {
+        PrivacySession session = this.guard.newSession();
+        String enveloped = "{\"content\":[{\"type\":\"text\",\"text\":"
+                + JsonMapper.builder().build().writeValueAsString(ORDER_COUNT_AS_STRING) + "}]}";
+        ToolCallback[] tools = session.wrap(new ToolCallback[] { stubCallback(enveloped, "aggregate_records") });
+
+        String result = tools[0].call("{\"entity\":\"Order\",\"function\":\"count\",\"field\":\"*\"}");
+
+        assertThat(result).contains("\\\"count\\\":\\\"120\\\"").doesNotContain("[PII:VALUE:");
+        assertThat(session.resolvedTotalCount()).isEqualTo(120L);
+    }
+
+    @Test
     void totalCountIsUnknownWhenTwoEntitiesWereCounted() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         ToolCallback[] tools = session.wrap(new ToolCallback[] {
                 stubCallback(ORDER_COUNT, "aggregate_records"), stubCallback(CUSTOMER_COUNT, "aggregate_records") });
 
@@ -532,7 +570,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void totalCountIsUnknownWhenTheCountedEntityIsNotTheOneRead() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         ToolCallback[] tools = session.wrap(new ToolCallback[] {
                 stubCallback(ORDER_ROWS, "read_records"), stubCallback(CUSTOMER_COUNT, "aggregate_records") });
 
@@ -544,7 +582,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void totalCountIsUnknownWhenTheReadFilterDoesNotMatchTheCountFilter() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         ToolCallback[] tools = session.wrap(new ToolCallback[] {
                 stubCallback(ORDER_ROWS, "read_records"), stubCallback(ORDER_COUNT, "aggregate_records") });
 
@@ -556,7 +594,7 @@ class SensitiveDataGuardTests {
 
     @Test
     void groupedCountIsNotTreatedAsTheMatchingRecordTotal() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         ToolCallback[] tools = session.wrap(new ToolCallback[] {
                 stubCallback(ORDER_COUNT, "aggregate_records") });
 

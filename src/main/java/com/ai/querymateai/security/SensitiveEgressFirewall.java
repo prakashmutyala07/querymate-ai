@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
  * and the fallback model. Asserting at individual call sites would miss most of those,
  * because the whole tool loop runs inside a single {@code ChatClient.call()}.
  *
- * <p>The check is exact rather than heuristic. {@link JavaPiiProtector} vaults every raw
+ * <p>The check is exact rather than heuristic. {@link RequestTokenVault} vaults every raw
  * value it protects, so those values are ground truth: not one of them may appear in an
  * outbound payload. A hit means protection failed somewhere upstream, and the request is
  * refused rather than sent.
@@ -36,14 +36,14 @@ public final class SensitiveEgressFirewall implements Interceptor {
 
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder().build();
 
-    private static final ThreadLocal<SensitiveRequestContext> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<PrivacySession> ACTIVE = new ThreadLocal<>();
 
     /**
      * Binds the turn's protection state to the calling thread. The model call is synchronous
      * all the way down to {@code okhttp3.Call#execute()}, so the interceptor runs on this
      * same thread.
      */
-    static void bind(SensitiveRequestContext session) {
+    static void bind(PrivacySession session) {
         ACTIVE.set(session);
     }
 
@@ -54,7 +54,7 @@ public final class SensitiveEgressFirewall implements Interceptor {
     @Override
     public Response intercept(Chain chain) throws IOException {
         Request request = chain.request();
-        SensitiveRequestContext session = ACTIVE.get();
+        PrivacySession session = ACTIVE.get();
         if (session == null) {
             // No protection state means nothing can be verified, so nothing may be sent.
             logger.error("Egress blocked: model call attempted outside a protected request scope url={}",
@@ -68,6 +68,15 @@ public final class SensitiveEgressFirewall implements Interceptor {
         }
         byte[] payload = readBody(body);
         String serializedPayload = new String(payload, StandardCharsets.UTF_8);
+        try {
+            DataDisclosurePolicy.ensurePayloadWithinLimit(serializedPayload,
+                    session.policy().limits().maxEgressBytes(), "Model egress payload");
+        }
+        catch (DataDisclosurePolicy.PolicyViolationException ex) {
+            logger.error("Egress blocked: payload exceeded configured limit requestId={} path={}",
+                    session.requestId(), request.url().encodedPath());
+            throw new SensitiveEgressBlockedException(ex.getMessage());
+        }
         List<String> leakedTokens = session.vaultedValuesPresentIn(serializedPayload);
         try {
             collectDecodedLeaks(OBJECT_MAPPER.readTree(serializedPayload), session, leakedTokens);
@@ -99,7 +108,7 @@ public final class SensitiveEgressFirewall implements Interceptor {
     }
 
     /** Checks decoded JSON strings as well as raw bytes, which may contain JSON escapes. */
-    private static void collectDecodedLeaks(JsonNode node, SensitiveRequestContext session,
+    private static void collectDecodedLeaks(JsonNode node, PrivacySession session,
             List<String> leakedTokens) {
         if (node == null) {
             return;

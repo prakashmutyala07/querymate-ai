@@ -93,21 +93,41 @@ curl -X DELETE http://localhost:8080/api/conversations/demo/memory
 ## Runtime Flow
 
 ```text
-ChatController -> ChatCoordinator -> PII guard -> Spring AI ChatClient
-               -> conversation memory -> guarded DAB MCP tools -> SQL Server
-               -> typed ChatResponse -> PII output guard -> UI
+Browser
+  -> PrivacySession
+  -> local PII detection
+  -> request token vault
+  -> LLM egress firewall
+  -> Spring AI ChatClient
+  -> secure MCP tool boundary
+  -> DAB / SQL Server
+  -> tool result processor
+  -> protected model response
+  -> UI disclosure policy
+  -> browser response
 ```
 
-Inbound email, phone, and explicitly identified customer-name values are pseudonymized before
-they reach OpenAI. Sensitive DAB result fields are pseudonymized at the tool-callback boundary
-before the model sees them. The application stores chat memory explicitly only after input
-protection and structured-output redaction; it does not use `MessageChatMemoryAdvisor`, which can
-otherwise capture raw model output before application-level redaction. Responses retain stable
-pseudonyms such as `CU_a3f9d2`, while entity tables include non-sensitive database IDs for reliable
-follow-ups. Raw PII and the request-scoped token map are not persisted.
+Inbound email, phone, and locally detected person names are tokenized before they reach OpenAI.
+Tokens are request-scoped and namespaced, for example `[PII:NAME:AbCdEfGhIjKlMnOp:1]`, so a token
+from one chat turn cannot collide with a token from another turn or be reused later as authority.
+The token vault tracks provenance: only values that came from the current user input may be
+restored into MCP/DAB filters; tokens minted from tool results or model output do not expand access.
 
-The POC has no end-user authentication or per-user authorization. DAB mutation tools are
-disabled and database access should use the `ecom_dab_reader` login created by the setup script.
+DAB tool calls pass through a secure boundary that allowlists tools, rejects model-provided identity
+arguments, enforces row and payload limits, and resolves only known current-request tokens. Raw tool
+results are parsed once by `ToolResultProcessor`, then protected by an entity.field disclosure
+policy. Unknown row columns fail closed by being tokenized or withheld rather than being sent to
+the model. Before every OpenAI request, the transport-level egress firewall verifies that no raw
+vaulted value is present in the outbound payload.
+
+The final browser response applies a separate UI disclosure policy: email and phone are masked, and
+names remain masked unless a future authenticated role check explicitly allows display. Sanitized
+turns are stored in memory; the request token vault is destroyed at the end of the request.
+
+This is strong defense-in-depth against accidental PII disclosure to a model provider. It is not yet
+an authorization boundary: the POC has no end-user identity, MCP identity propagation, or DAB/SQL
+Server row-level security. DAB mutation tools are disabled and database access should use the
+`ecom_dab_reader` login created by the setup script. Identity -> MCP -> DAB -> RLS should be treated
+as a separate milestone.
 
 ## Isolation
-

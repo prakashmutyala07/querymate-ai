@@ -59,8 +59,8 @@ class ApplicationResourceTests {
 
         assertThat(prompt)
                 .contains("FullName, Email, Phone")
-                .contains("must not be selected or displayed unless the user explicitly asks for them or they are strictly necessary")
-                .contains("a wider selection yields a less useful answer, not a richer one")
+                .contains("must not be selected unless the user explicitly asks for them or they are strictly necessary")
+                .contains("Selecting a sensitive field returns a protected token rather than the raw value")
                 .contains("User: \"List 10 customers with their city and loyalty tier.\"")
                 .contains("Correct columns: CustomerId, City, LoyaltyTier")
                 .contains("Incorrect columns: CustomerId, FullName, City, LoyaltyTier");
@@ -71,11 +71,12 @@ class ApplicationResourceTests {
         String prompt = normalizedPrompt();
 
         assertThat(prompt)
-                .contains("When the user asks for \"name\" or \"customer name,\"")
+                .contains("When the user asks for \"name\", \"full name\", \"fullname\", or \"customer name,\"")
                 .contains("use the exact FullName field only when describe_entities exposes")
                 .contains("label its protected token column CustomerNameProtected")
-                .contains("the application may render display-safe names in the final UI")
-                .contains("Do not say that the name was excluded when the user explicitly asked for it")
+                .contains("the application may render masked display values in the final UI")
+                .contains("Do not return CLARIFICATION merely because FullName is sensitive")
+                .contains("Do not say that the name was excluded or unavailable when the user explicitly asked for it")
                 .contains("User: \"List 10 customers with their name, city and loyalty tier.\"")
                 .contains("Correct columns: CustomerId, CustomerNameProtected, City, LoyaltyTier")
                 .contains("omitting the requested name")
@@ -92,7 +93,7 @@ class ApplicationResourceTests {
                 .contains("do not select it, mention its value, or claim that it was found")
                 .contains("For a customer lookup by name")
                 .contains("Do not select Email or Phone unless the user asks for email, phone, contact details")
-                .contains("User: \"Find customer CustomerNameProtected#1\"")
+                .contains("User: \"Find customer [PII:NAME:AbCdEfGhIjKlMnOp:1]\"")
                 .contains("select the approved ID, CustomerNameProtected")
                 .contains("Email or Phone for a normal customer lookup when the user did not ask for contact")
                 .contains("inventing missing contact values");
@@ -118,7 +119,7 @@ class ApplicationResourceTests {
                 .contains("copy that current protected token exactly")
                 .contains("FullName, Email, or Phone")
                 .contains("When searching by a protected customer name:")
-                .contains("FullName eq 'CustomerNameProtected#1'")
+                .contains("FullName eq '[PII:NAME:AbCdEfGhIjKlMnOp:1]'")
                 .contains("Never use CustomerNameProtected in a tool filter")
                 .contains("Never use CustomerId unless the user supplied an actual CustomerId");
     }
@@ -162,7 +163,8 @@ class ApplicationResourceTests {
         assertThat(prompt)
                 .contains("PII AND CONFIDENTIAL DATA")
                 .contains("any other field carrying a direct identifier")
-                .contains("must not be selected or displayed unless the user explicitly asks for them")
+                .contains("must not be selected unless the user explicitly asks for them")
+                .contains("This is allowed when the user explicitly asked for that field")
                 .contains("Include stable database IDs only when they are non-sensitive");
     }
 

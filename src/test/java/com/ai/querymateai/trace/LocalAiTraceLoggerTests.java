@@ -31,9 +31,10 @@ class LocalAiTraceLoggerTests {
         LocalAiTraceLogger traceLogger = new LocalAiTraceLogger(properties(true, false), new MockEnvironment());
 
         traceLogger.traceLlmRequest("abc123", "OpenAI", "primary", "system", List.of(),
-                "Show CustomerNameProtected#1", new org.springframework.ai.tool.ToolCallback[0]);
+                "Show [PII:NAME:AbCdEfGhIjKlMnOp:1]", new org.springframework.ai.tool.ToolCallback[0]);
 
-        assertThat(output).contains("AI TRACE", "LLM REQUEST - TO MODEL", "Show CustomerNameProtected#1")
+        assertThat(output).contains("AI TRACE", "LLM REQUEST - TO MODEL",
+                        "Show [PII:NAME:AbCdEfGhIjKlMnOp:1]")
                 .doesNotContain("Show Jane Doe");
     }
 
@@ -57,7 +58,7 @@ class LocalAiTraceLoggerTests {
                 new AppProperties.Execution(true, false, 1200, 0.1, Duration.ofSeconds(10),
                         AppProperties.ResponseFormat.JSON_SCHEMA),
                 new AppProperties.Memory(20),
-                new AppProperties.Security(null),
+                new AppProperties.Security(null, null, null),
                 new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(traceEnabled, includeSensitiveValues, 20_000)),
                 List.of());

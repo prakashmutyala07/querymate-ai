@@ -73,44 +73,70 @@ app:
       include-sensitive-values: ${APP_AI_TRACE_INCLUDE_SENSITIVE_VALUES:false}
       max-payload-chars: ${APP_AI_TRACE_MAX_PAYLOAD_CHARS:20000}
   security:
+    detection:
+      phone-region: ${APP_PII_PHONE_REGION:US}
+      # Keep false unless the OpenNLP model is packaged; when true, startup fails instead of
+      # silently running without local person-name detection.
+      require-person-name-model: ${APP_REQUIRE_PERSON_NAME_MODEL:false}
+    limits:
+      max-tool-result-bytes: ${APP_MAX_TOOL_RESULT_BYTES:1000000}
+      max-egress-bytes: ${APP_MAX_EGRESS_BYTES:2000000}
+      max-rows: ${APP_MAX_ROWS:25}
     # Deny-by-default for rows returned by the row-data tools: any column not listed here
     # is protected before the model sees it, so a column added by a later migration fails
     # closed instead of being forwarded. Widen this list deliberately, never by reflex.
     data-policy:
       safe-columns:
-        # Approved identifiers, measures, and aggregate output.
-        - CustomerId
-        - CategoryId
-        - ProductId
-        - OrderId
-        - OrderItemId
-        - PaymentId
-        - ShipmentId
-        - ReviewId
-        - UnitPrice
-        - Cost
-        - InventoryQuantity
-        - Subtotal
-        - TaxAmount
-        - ShippingAmount
-        - TotalAmount
-        - Quantity
-        - DiscountAmount
-        - LineTotal
-        - Amount
-        - Rating
         - count
-        # Approved descriptive values.
-        - City
-        - StateProvince
-        - Country
-        - LoyaltyTier
-        - Status
-        - OrderStatus
-        - SalesChannel
-        - OrderDate
-        - CategoryName
-        - ProductName
+      safe-fields-by-entity:
+        Customer:
+          - CustomerId
+          - City
+          - StateProvince
+          - Country
+          - LoyaltyTier
+        Category:
+          - CategoryId
+          - CategoryName
+        Product:
+          - ProductId
+          - CategoryId
+          - ProductName
+          - UnitPrice
+          - Cost
+          - InventoryQuantity
+        Order:
+          - OrderId
+          - CustomerId
+          - OrderDate
+          - OrderStatus
+          - Subtotal
+          - TaxAmount
+          - ShippingAmount
+          - TotalAmount
+          - SalesChannel
+        OrderItem:
+          - OrderItemId
+          - OrderId
+          - ProductId
+          - Quantity
+          - UnitPrice
+          - DiscountAmount
+          - LineTotal
+        Payment:
+          - PaymentId
+          - OrderId
+          - Amount
+          - Status
+        Shipment:
+          - ShipmentId
+          - OrderId
+          - Status
+        Review:
+          - ReviewId
+          - CustomerId
+          - ProductId
+          - Rating
       # This overrides safe-columns for a numeric column when a deployment needs stricter handling.
       sensitive-numeric-columns: []
   # entity.field pairs protected before any tool result reaches the model. These stay

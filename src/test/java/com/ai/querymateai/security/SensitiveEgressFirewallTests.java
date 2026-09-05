@@ -34,6 +34,9 @@ class SensitiveEgressFirewallTests {
 
     private static final String REAL_EMAIL = "john.smith@example.com";
 
+    private static final String PROTECTED_PATTERN =
+            "\\[PII:(?:NAME|EMAIL|PHONE|VALUE):[A-Za-z0-9_-]{16}:\\d+]";
+
     private final SensitiveDataGuard guard = newGuard();
 
     private final SensitiveEgressFirewall firewall = new SensitiveEgressFirewall();
@@ -45,7 +48,7 @@ class SensitiveEgressFirewallTests {
 
     @Test
     void payloadCarryingOnlyProtectedTokensIsSentOn() throws IOException {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         String protectedMessage = session.protectInput("Find customer " + REAL_NAME);
         session.bindToEgress();
 
@@ -53,12 +56,12 @@ class SensitiveEgressFirewallTests {
 
         assertThatCode(() -> this.firewall.intercept(chain)).doesNotThrowAnyException();
         assertThat(chain.forwarded).isNotNull();
-        assertThat(chain.forwardedBody()).contains("CustomerNameProtected#1").doesNotContain(REAL_NAME);
+        assertThat(chain.forwardedBody()).containsPattern(PROTECTED_PATTERN).doesNotContain(REAL_NAME);
     }
 
     @Test
     void payloadCarryingARawVaultedValueIsBlocked() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         session.protectInput("Find customer " + REAL_NAME);
         session.bindToEgress();
 
@@ -72,7 +75,7 @@ class SensitiveEgressFirewallTests {
 
     @Test
     void valueVaultedFromAToolResultIsBlockedOnALaterTurn() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         session.protectStructuredCell("Email", REAL_EMAIL);
         session.bindToEgress();
 
@@ -86,7 +89,7 @@ class SensitiveEgressFirewallTests {
     @Test
     void jsonEscapingCannotHideAVaultedValue() {
         String quotedSecret = "Jane \"JJ\" Doe";
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         session.protectStructuredCell("FullName", quotedSecret);
         session.bindToEgress();
         String json = JsonMapper.builder().build()
@@ -104,7 +107,7 @@ class SensitiveEgressFirewallTests {
         // Regression: a LoyaltyTier of "Gold" was vaulted, then matched the schema's own
         // description ("Bronze Silver Gold or Platinum") already in the conversation, and the
         // firewall failed a request whose payload was correctly protected throughout.
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         session.protectStructuredCell("LoyaltyTier", "Gold");
         session.bindToEgress();
 
@@ -117,7 +120,7 @@ class SensitiveEgressFirewallTests {
 
     @Test
     void distinctiveValuesAreStillBlockedAfterTheCollisionFix() {
-        SensitiveRequestContext session = this.guard.newSession();
+        PrivacySession session = this.guard.newSession();
         session.protectInput("Find customer " + REAL_NAME);
         session.protectStructuredCell("Email", REAL_EMAIL);
         // TaxId is vaulted by the deny-by-default tool-result path, not by field name.
@@ -143,15 +146,14 @@ class SensitiveEgressFirewallTests {
 
     @Test
     void oneSessionsVaultDoesNotLeakIntoAnother() {
-        SensitiveRequestContext first = this.guard.newSession();
+        PrivacySession first = this.guard.newSession();
         first.protectInput("Find customer " + REAL_NAME);
 
-        SensitiveRequestContext second = this.guard.newSession();
+        PrivacySession second = this.guard.newSession();
         String secondProtected = second.protectInput("Find customer Ethan Thomas");
         second.bindToEgress();
 
-        // Counters restart per session, so the second turn mints #1 for its own value...
-        assertThat(secondProtected).contains("CustomerNameProtected#1");
+        assertThat(secondProtected).containsPattern(PROTECTED_PATTERN);
         // ...and resolving that token must not reach into the first session's vault.
         assertThat(second.restoreProtectedValues(secondProtected))
                 .contains("Ethan Thomas")
@@ -184,7 +186,7 @@ class SensitiveEgressFirewallTests {
                 new AppProperties.Memory(20),
                 new AppProperties.Security(new AppProperties.DataPolicy(
                         List.of("City", "StateProvince", "Country", "LoyaltyTier", "Status"),
-                        null, null, null)),
+                        null, null, null, null), null, null),
                 new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(false, false, 20_000)),
                 List.of(new AppProperties.SensitiveField("Customer", "FullName", null),

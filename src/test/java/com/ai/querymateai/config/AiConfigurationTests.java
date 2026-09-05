@@ -17,7 +17,7 @@ class AiConfigurationTests {
                 new AppProperties.Execution(true, false, 1200, 0.1, java.time.Duration.ofSeconds(120),
                         AppProperties.ResponseFormat.JSON_SCHEMA),
                 new AppProperties.Memory(3),
-                new AppProperties.Security(null),
+                new AppProperties.Security(null, null, null),
                 new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(false, false, 20_000)),
                 java.util.List.of());

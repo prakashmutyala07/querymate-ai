@@ -15,7 +15,7 @@ import org.springframework.util.StringUtils;
 
 import com.ai.querymateai.mcp.McpToolCatalog;
 import com.ai.querymateai.security.SensitiveDataGuard;
-import com.ai.querymateai.security.SensitiveRequestContext;
+import com.ai.querymateai.security.PrivacySession;
 import com.ai.querymateai.trace.LocalAiTraceLogger;
 
 /** Coordinates a chat turn; specialized collaborators own prompts, privacy, tools, and model policy. */
@@ -60,7 +60,7 @@ public class ChatCoordinator implements ChatOperations {
         long requestStartedAt = System.nanoTime();
 
         progressSink.progress("prepare", "Preparing a safe database request\u2026");
-        SensitiveRequestContext guardSession =
+        PrivacySession guardSession =
                 this.sensitiveDataGuard.newSession(requestId, step -> progressSink.progress("tool", step));
         String protectedMessage = guardSession.protectInput(message);
         // Everything this thread sends to the model provider from here on is verified against
@@ -91,6 +91,7 @@ public class ChatCoordinator implements ChatOperations {
         }
         finally {
             guardSession.unbindFromEgress();
+            guardSession.close();
             progressSink.progress("done", "Composing answer\u2026");
         }
     }

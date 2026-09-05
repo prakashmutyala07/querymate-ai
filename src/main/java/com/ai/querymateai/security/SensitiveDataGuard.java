@@ -1,6 +1,5 @@
 package com.ai.querymateai.security;
 
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -32,24 +31,29 @@ public class SensitiveDataGuard {
 
     private final LocalAiTraceLogger traceLogger;
 
-    /** Lower-cased field name -> token prefix. Matching is by field name across all entities. */
-    private final Map<String, String> prefixByField;
+    private final PiiDetector detector;
 
-    private final AppProperties.DataPolicy dataPolicy;
+    private final DataDisclosurePolicy policy;
+
+    private final Set<String> protectedFields;
 
     public SensitiveDataGuard(AppProperties properties, ObjectMapper objectMapper,
             LocalAiTraceLogger traceLogger) {
         this.objectMapper = objectMapper;
         this.traceLogger = traceLogger;
-        this.prefixByField = properties.sensitiveFields().stream()
-                .collect(Collectors.toMap(field -> field.field().toLowerCase(),
-                        AppProperties.SensitiveField::prefixOrDefault, (first, second) -> first));
-        this.dataPolicy = properties.security().dataPolicy();
-        logger.info("Java request-local PII protection active: {} named sensitive field(s) {}, "
-                        + "deny-by-default row protection for tool(s) {} with {} safe column(s) {}",
-                this.prefixByField.size(), this.prefixByField.keySet(), this.dataPolicy.rowDataTools(),
-                this.dataPolicy.safeColumns().size(), this.dataPolicy.safeColumns());
-        if (!JavaPiiProtector.personNameModelAvailable()) {
+        this.detector = new PiiDetector(properties.security().detection().phoneRegion(),
+                properties.security().detection().requirePersonNameModel());
+        this.policy = new DataDisclosurePolicy(properties);
+        this.protectedFields = properties.sensitiveFields().stream()
+                .map(field -> field.field().toLowerCase(java.util.Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
+        AppProperties.DataPolicy dataPolicy = properties.security().dataPolicy();
+        logger.info("Request-local PII protection active: {} named sensitive field(s) {}, "
+                        + "row tools={} globalSafeColumns={} entityPolicies={} maxRows={} maxToolResultBytes={}",
+                this.protectedFields.size(), this.protectedFields, dataPolicy.rowDataTools(),
+                dataPolicy.safeColumns().size(), dataPolicy.safeFieldsByEntity().keySet(),
+                properties.security().limits().maxRows(), properties.security().limits().maxToolResultBytes());
+        if (!PiiDetector.personNameModelAvailable()) {
             // Silence here would be worse than the gap: the rest of the startup log reads as if
             // every detector were running.
             logger.warn("Apache OpenNLP person-name model 'en-ner-person.bin' is NOT on the classpath. "
@@ -58,29 +62,23 @@ public class SensitiveDataGuard {
         }
     }
 
-    public SensitiveRequestContext newSession() {
+    public PrivacySession newSession() {
         return newSession("none", step -> {
         });
     }
 
     /** @param onStep receives a short human-readable note each time a tool is about to run. */
-    public SensitiveRequestContext newSession(java.util.function.Consumer<String> onStep) {
+    public PrivacySession newSession(java.util.function.Consumer<String> onStep) {
         return newSession("none", onStep);
     }
 
     /** @param onStep receives a short human-readable note each time a tool is about to run. */
-    public SensitiveRequestContext newSession(String requestId, java.util.function.Consumer<String> onStep) {
-        // A protector per turn: the token vault holds raw PII, so it must not outlive the
-        // request or be visible to another one.
-        JavaPiiProtector piiProtector = new JavaPiiProtector();
-        SensitivePayloadProtector payloadProtector = new SensitivePayloadProtector(this.objectMapper,
-                this.prefixByField, this.dataPolicy, piiProtector);
-        return new SensitiveRequestContext(StringUtils.hasText(requestId) ? requestId : "none", onStep,
-                this.objectMapper, this.traceLogger, piiProtector, payloadProtector,
-                this.prefixByField.keySet());
+    public PrivacySession newSession(String requestId, java.util.function.Consumer<String> onStep) {
+        return new PrivacySession(StringUtils.hasText(requestId) ? requestId : "none", onStep,
+                this.objectMapper, this.traceLogger, this.detector, this.policy);
     }
 
     public Set<String> protectedFields() {
-        return this.prefixByField.keySet();
+        return this.protectedFields;
     }
 }

@@ -19,7 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.ai.querymateai.config.AppProperties;
 import com.ai.querymateai.security.SensitiveDataGuard;
-import com.ai.querymateai.security.SensitiveRequestContext;
+import com.ai.querymateai.security.PrivacySession;
 import com.ai.querymateai.trace.LocalAiTraceLogger;
 import com.openai.core.http.Headers;
 import com.openai.errors.OpenAIInvalidDataException;
@@ -30,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
 class ChatModelRunnerTests {
 
     private static final String PROTECTED_PATTERN =
-            "\\b(?:CustomerName|Email|Phone|SensitiveValue)Protected#\\d+\\b";
+            "\\[PII:(?:NAME|EMAIL|PHONE|VALUE):[A-Za-z0-9_-]{16}:\\d+]";
 
     private static final String VALID_ANSWER = """
             {"status":"ANSWER","answer":"Done.","columns":[],"rows":[],
@@ -164,7 +164,7 @@ class ChatModelRunnerTests {
         assertThat(answer.rows().getFirst().getFirst()).as("CustomerId must remain the stable database ID")
                 .doesNotContain("Protected#");
         assertThat(answer.rows().getFirst().get(1)).as("explicitly requested name stays protected")
-                .contains("Protected#");
+                .contains("[PII:NAME:");
     }
 
     private static Fixture fixture(boolean primaryRetryEnabled, AppProperties.ResponseFormat responseFormat,
@@ -174,7 +174,7 @@ class ChatModelRunnerTests {
                 new AppProperties.Execution(true, primaryRetryEnabled, 1200, 0.1, Duration.ofSeconds(10),
                         responseFormat),
                 new AppProperties.Memory(20),
-                new AppProperties.Security(null), new AppProperties.Logging(false),
+                new AppProperties.Security(null, null, null), new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(false, false, 20_000)), List.of());
         LocalAiTraceLogger traceLogger = new LocalAiTraceLogger(properties,
                 new org.springframework.mock.env.MockEnvironment());
@@ -193,7 +193,7 @@ class ChatModelRunnerTests {
                 List.of(new Generation(new org.springframework.ai.chat.messages.AssistantMessage(content))));
     }
 
-    private record Fixture(ChatModelRunner runner, SensitiveRequestContext guardSession) {
+    private record Fixture(ChatModelRunner runner, PrivacySession guardSession) {
 
         private ChatModelRunner.Result run() {
             return this.runner.run("question", "system", List.of(), new ToolCallback[0], this.guardSession,

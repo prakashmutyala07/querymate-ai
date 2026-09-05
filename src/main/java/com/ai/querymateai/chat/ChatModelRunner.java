@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.ai.querymateai.config.AppProperties;
-import com.ai.querymateai.security.SensitiveRequestContext;
+import com.ai.querymateai.security.PrivacySession;
 import com.ai.querymateai.trace.LocalAiTraceLogger;
 import com.openai.errors.OpenAIInvalidDataException;
 import com.openai.errors.RateLimitException;
@@ -58,7 +58,7 @@ public class ChatModelRunner {
     }
 
     public Result run(String message, String systemPrompt, List<Message> history, ToolCallback[] tools,
-            SensitiveRequestContext guardSession, ProgressSink progressSink, String requestId) {
+            PrivacySession guardSession, ProgressSink progressSink, String requestId) {
         String primary = this.properties.models().primary();
         String fallback = this.properties.models().fallback();
 
@@ -86,7 +86,7 @@ public class ChatModelRunner {
     }
 
     private Result fallbackOrThrow(String message, String systemPrompt, List<Message> history, ToolCallback[] tools,
-            SensitiveRequestContext guardSession, ProgressSink progressSink, String fallback,
+            PrivacySession guardSession, ProgressSink progressSink, String fallback,
             String primaryFailureMessage, ModelCallException primaryFailure, String requestId) {
         if (!this.properties.execution().fallbackEnabled()) {
             throw chatFailure(userMessageFor(primaryFailureMessage, primaryFailure));
@@ -103,7 +103,7 @@ public class ChatModelRunner {
     }
 
     private Result complete(String message, String systemPrompt, List<Message> history, ToolCallback[] tools,
-            SensitiveRequestContext guardSession, String model, boolean fallbackUsed, String requestId) {
+            PrivacySession guardSession, String model, boolean fallbackUsed, String requestId) {
         long startedAt = System.nanoTime();
         org.springframework.ai.chat.model.ChatResponse response;
         this.traceLogger.traceLlmRequest(requestId, "OpenAI", model, systemPrompt(systemPrompt), history, message, tools);
@@ -131,22 +131,21 @@ public class ChatModelRunner {
         logUsage(model, response, elapsedNanos, requestId, tools);
         String content = response == null || response.getResult() == null
                 || response.getResult().getOutput() == null ? null : response.getResult().getOutput().getText();
-        String protectedContent = guardSession.protectOutput(content);
-        this.traceLogger.traceFinalModelResponse(requestId, content, protectedContent);
         long structuredStartedAt = System.nanoTime();
         ChatResponse.ModelAnswer parsed;
-        boolean parsedSuccessfully = true;
         try {
             parsed = this.answerConverter.convert(content);
         }
         catch (RuntimeException ex) {
-            parsedSuccessfully = false;
             logger.warn("Structured model response parse failed requestId={} model={} errorType={} durationMs={}",
                     requestId, model, ex.getClass().getSimpleName(), elapsedMillis(structuredStartedAt));
             parsed = new ChatResponse.ModelAnswer(ChatResponse.Status.ERROR, STRUCTURED_OUTPUT_ERROR,
                     List.of(), List.of(), false, "", "");
         }
-        return new Result(model, fallbackUsed, sanitize(parsed, guardSession), protectedContent);
+        ChatResponse.ModelAnswer sanitized = sanitize(parsed, guardSession);
+        String protectedContent = sanitized.toString();
+        this.traceLogger.traceFinalModelResponse(requestId, protectedContent, protectedContent);
+        return new Result(model, fallbackUsed, sanitized, protectedContent);
     }
 
     private static boolean egressBlocked(Throwable ex) {
@@ -162,7 +161,7 @@ public class ChatModelRunner {
     }
 
     private static ChatResponse.ModelAnswer sanitize(ChatResponse.ModelAnswer answer,
-            SensitiveRequestContext guardSession) {
+            PrivacySession guardSession) {
         if (answer == null) {
             return new ChatResponse.ModelAnswer(ChatResponse.Status.ERROR, STRUCTURED_OUTPUT_ERROR,
                     List.of(), List.of(), false, "", "");
@@ -177,7 +176,7 @@ public class ChatModelRunner {
     }
 
     private static List<String> protectRow(List<String> columns, List<String> row,
-            SensitiveRequestContext guardSession) {
+            PrivacySession guardSession) {
         java.util.ArrayList<String> protectedRow = new java.util.ArrayList<>(row.size());
         for (int i = 0; i < row.size(); i++) {
             String column = i < columns.size() ? columns.get(i) : "";

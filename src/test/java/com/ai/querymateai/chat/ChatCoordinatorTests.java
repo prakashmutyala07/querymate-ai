@@ -35,7 +35,7 @@ class ChatCoordinatorTests {
     private static final String NAME = "John Smith";
 
     private static final String PROTECTED_PATTERN =
-            "\\b(?:CustomerName|Email|Phone|SensitiveValue)Protected#\\d+\\b";
+            "\\[PII:(?:NAME|EMAIL|PHONE|VALUE):[A-Za-z0-9_-]{16}:\\d+]";
 
     @Test
     void rawInputAndModelOutputNeverReachModelOrMemoryInNormalMode() {
@@ -76,8 +76,8 @@ class ChatCoordinatorTests {
         ChatResponse result = fixture.coordinator().chat(
                 "Find customer named John Smith with jane.doe@example.com", "local-display-test");
 
-        assertThat(result.message()).contains(NAME).doesNotContain(EMAIL);
-        assertThat(result.rows().getFirst().get(1)).isEqualTo(NAME);
+        assertThat(result.message()).contains("J*** S***").doesNotContain(NAME, EMAIL);
+        assertThat(result.rows().getFirst().get(1)).isEqualTo("J*** S***");
         assertThat(result.rows().getFirst().get(2)).isEqualTo("jan***@example.com");
         assertThat(fixture.memory().get("local-display-test"))
                 .extracting(message -> message.getText())
@@ -105,7 +105,7 @@ class ChatCoordinatorTests {
                 new AppProperties.Execution(true, false, 1200, 0.1, Duration.ofSeconds(10),
                         AppProperties.ResponseFormat.JSON_SCHEMA),
                 new AppProperties.Memory(20),
-                new AppProperties.Security(null),
+                new AppProperties.Security(null, null, null),
                 new AppProperties.Logging(localSensitiveMode),
                 new AppProperties.Ai(new AppProperties.Trace(localSensitiveMode, localSensitiveMode, 20_000)),
                 List.of(new AppProperties.SensitiveField("Customer", "Email", "EM"),
