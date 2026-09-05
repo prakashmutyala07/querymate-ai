@@ -45,7 +45,10 @@ class SensitiveDataGuardTests {
                 new AppProperties.Execution(true, false, 1200, 0.1, java.time.Duration.ofSeconds(120),
                         AppProperties.ResponseFormat.JSON_SCHEMA),
                 new AppProperties.Memory(20),
-                new AppProperties.Security(),
+                new AppProperties.Security(new AppProperties.DataPolicy(
+                        List.of("CustomerId", "OrderId", "count", "City", "StateProvince", "Country",
+                                "LoyaltyTier", "Status"),
+                        null, null, null)),
                 new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(false, false, 20_000)),
                 List.of(new AppProperties.SensitiveField("Customer", "FullName", null),
@@ -58,10 +61,14 @@ class SensitiveDataGuardTests {
     }
 
     private static ToolCallback stubCallback(String payload) {
+        return stubCallback(payload, "read_records");
+    }
+
+    private static ToolCallback stubCallback(String payload, String toolName) {
         return new ToolCallback() {
             @Override
             public ToolDefinition getToolDefinition() {
-                return ToolDefinition.builder().name("read_records")
+                return ToolDefinition.builder().name(toolName)
                         .description("read records").inputSchema("{}").build();
             }
 
@@ -150,7 +157,7 @@ class SensitiveDataGuardTests {
                 ChatResponse.Status.ANSWER, "Customer CustomerNameProtected#999 was found.",
                 List.of("CustomerId", "CustomerNameProtected", "EmailProtected", "PhoneProtected"),
                 List.of(List.of("11", protectedName, protectedEmail, protectedPhone)),
-                true, false, "Contact " + protectedEmail + " or " + protectedPhone, "");
+                true, false, ChatResponse.UNKNOWN_TOTAL, "Contact " + protectedEmail + " or " + protectedPhone, "");
 
         ChatResponse uiResponse = session.toUiResponse(protectedResponse);
 
@@ -288,6 +295,147 @@ class SensitiveDataGuardTests {
     }
 
     @Test
+    void modelProseIsNotMangledByThePersonNameHeuristic() {
+        // Regression: the name heuristic used to fire on ordinary words following "customer",
+        // rewriting the model's own sentence into tokens. Output protection must leave prose alone.
+        SensitiveRequestContext session = this.guard.newSession();
+        session.protectInput("lookup customer record of " + REAL_NAME);
+
+        String answer = session.protectOutput(
+                "No customer record was found matching the name CustomerNameProtected#1 "
+                        + "in the currently approved data access configuration.");
+        String dataNotes = session.protectOutput(
+                "The search was performed on the Customer FullName field as the filter.");
+
+        assertThat(answer).isEqualTo("No customer record was found matching the name "
+                + "CustomerNameProtected#1 in the currently approved data access configuration.");
+        assertThat(dataNotes).isEqualTo("The search was performed on the Customer FullName field as the filter.");
+    }
+
+    @Test
+    void outputStillProtectsContactDetailsTheModelEmits() {
+        SensitiveRequestContext session = this.guard.newSession();
+
+        String answer = session.protectOutput("Reach them at " + REAL_EMAIL + " or " + REAL_PHONE + ".");
+
+        assertThat(answer).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE)
+                .contains("EmailProtected#1", "PhoneProtected#1");
+    }
+
+    @Test
+    void outputProtectionDoesNotVaultOrdinaryWordsThatWouldBlockEgress() {
+        // Junk vault entries are not cosmetic: the egress firewall blocks any outbound payload
+        // containing a vaulted value, and "FullName" appears throughout the system prompt.
+        SensitiveRequestContext session = this.guard.newSession();
+
+        session.protectOutput("The search was performed on the Customer FullName field as the filter.");
+
+        assertThat(session.vaultedValuesPresentIn("... use the exact FullName field ...")).isEmpty();
+    }
+
+    @Test
+    void genericProtectedValuesRenderDistinctlyInTheUi() {
+        // Deny-by-default protects many columns now. A fixed placeholder would make every
+        // protected cell in a row look identical and the table unreadable.
+        String toolResult = "{\"value\":[{\"TaxId\":\"AB-123-XYZ\",\"Notes\":\"Prefers morning delivery\"}]}";
+        SensitiveRequestContext session = this.guard.newSession();
+        session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0].call("{\"entity\":\"Customer\"}");
+
+        ChatResponse response = new ChatResponse("c", "m", false, ChatResponse.Status.ANSWER, "ok",
+                List.of("TaxId", "Notes"),
+                List.of(List.of("SensitiveValueProtected#1", "SensitiveValueProtected#2")),
+                true, false, ChatResponse.UNKNOWN_TOTAL, "", "");
+        ChatResponse ui = session.toUiResponse(response);
+
+        assertThat(ui.rows().getFirst()).containsExactly("AB***", "Pr***");
+    }
+
+    @Test
+    void columnMissingFromBothTheSensitiveListAndTheSafeListIsProtected() {
+        // TaxId is configured nowhere. Deny-by-default means it is protected anyway, which is
+        // the whole point: a column added by a later migration must fail closed.
+        String toolResult = "{\"value\":[{\"CustomerId\":1,\"TaxId\":\"AB-123-XYZ\",\"City\":\"Austin\"}]}";
+        SensitiveRequestContext session = this.guard.newSession();
+
+        String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
+                .call("{\"entity\":\"Customer\"}");
+
+        assertThat(modelBoundPayload).doesNotContain("AB-123-XYZ")
+                .contains("SensitiveValueProtected#1")
+                .contains("Austin")
+                .contains("\"CustomerId\":1");
+        assertThat(session.restoreProtectedValues(modelBoundPayload)).contains("AB-123-XYZ");
+    }
+
+    @Test
+    void unclassifiedNumericColumnIsProtectedUnlessExplicitlySafe() {
+        String toolResult = "{\"value\":[{\"CustomerId\":1,\"NumericTaxId\":123456789}]}";
+        SensitiveRequestContext session = this.guard.newSession();
+
+        String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
+                .call("{\"entity\":\"Customer\"}");
+
+        assertThat(modelBoundPayload).contains("\"CustomerId\":1", "SensitiveValueProtected#1")
+                .doesNotContain("123456789");
+    }
+
+    @Test
+    void aggregateResultArrayUsesDenyByDefaultProtection() {
+        String toolResult = "{\"result\":[{\"ConfidentialGroup\":\"North-Secret\",\"count\":2}]}";
+        SensitiveRequestContext session = this.guard.newSession();
+
+        String modelBoundPayload = session.wrap(
+                new ToolCallback[] { stubCallback(toolResult, "aggregate_records") })[0]
+                .call("{\"entity\":\"Customer\",\"function\":\"count\",\"field\":\"*\","
+                        + "\"groupby\":[\"ConfidentialGroup\"]}");
+
+        assertThat(modelBoundPayload).contains("SensitiveValueProtected#1", "\"count\":2")
+                .doesNotContain("North-Secret");
+    }
+
+    @Test
+    void unrecognisedRowDataShapeIsWithheld() {
+        String toolResult = "{\"rows\":[{\"UnknownSecret\":\"raw-secret\"}]}";
+        SensitiveRequestContext session = this.guard.newSession();
+
+        String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
+                .call("{\"entity\":\"Customer\"}");
+
+        assertThat(modelBoundPayload).contains("could not be verified", "withheld")
+                .doesNotContain("raw-secret");
+    }
+
+    @Test
+    void envelopeFieldsOutsideTheRowArrayAreLeftIntact() {
+        String toolResult = "{\"entity\":\"Customer\",\"message\":\"Query completed\","
+                + "\"status\":\"success\",\"result\":{\"value\":[{\"FullName\":\"John Smith\"}]}}";
+        SensitiveRequestContext session = this.guard.newSession();
+
+        String modelBoundPayload = session.wrap(new ToolCallback[] { stubCallback(toolResult) })[0]
+                .call("{\"entity\":\"Customer\"}");
+
+        assertThat(modelBoundPayload).contains("Query completed", "success", "Customer")
+                .doesNotContain(REAL_NAME)
+                .contains("CustomerNameProtected#1");
+    }
+
+    @Test
+    void schemaDiscoveryResultReachesTheModelIntact() {
+        // describe_entities returns field metadata, not rows. Protecting it would leave the
+        // model unable to learn which fields exist.
+        String schema = "{\"value\":[{\"name\":\"FullName\",\"type\":\"string\","
+                + "\"description\":\"Customer full name\"}]}";
+        SensitiveRequestContext session = this.guard.newSession();
+
+        String modelBoundPayload = session.wrap(
+                new ToolCallback[] { stubCallback(schema, "describe_entities") })[0]
+                .call("{\"entity\":\"Customer\"}");
+
+        assertThat(modelBoundPayload).contains("FullName", "string", "Customer full name")
+                .doesNotContain("SensitiveValueProtected");
+    }
+
+    @Test
     void unparseableToolResultIsWithheldRatherThanForwarded() {
         SensitiveRequestContext session = this.guard.newSession();
         ToolCallback guarded = session.wrap(new ToolCallback[] { stubCallback("<html>John Smith</html>") })[0];
@@ -335,5 +483,86 @@ class SensitiveDataGuardTests {
                 "{\"filter\":\"Email eq 'x@example.test' and Phone eq '555-0101'\"}");
 
         assertThat(resolved).isEqualTo(2);
+    }
+
+    private static final String ORDER_ROWS =
+            "{\"value\":[{\"OrderId\":1,\"OrderStatus\":\"Delivered\"},{\"OrderId\":2,\"OrderStatus\":\"Shipped\"}]}";
+
+    private static final String ORDER_COUNT =
+            "{\"entity\":\"Order\",\"result\":[{\"count\":120}],\"status\":\"success\"}";
+
+    private static final String CUSTOMER_COUNT =
+            "{\"entity\":\"Customer\",\"result\":[{\"count\":40}],\"status\":\"success\"}";
+
+    @Test
+    void totalCountIsReadFromTheCountingToolResult() {
+        SensitiveRequestContext session = this.guard.newSession();
+        ToolCallback[] tools = session.wrap(new ToolCallback[] {
+                stubCallback(ORDER_ROWS, "read_records"), stubCallback(ORDER_COUNT, "aggregate_records") });
+
+        tools[0].call("{\"entity\":\"Order\",\"first\":2}");
+        tools[1].call("{\"entity\":\"Order\",\"function\":\"count\",\"field\":\"*\"}");
+
+        assertThat(session.resolvedTotalCount()).isEqualTo(120L);
+    }
+
+    @Test
+    void totalCountIsReadThroughTheMcpContentEnvelope() {
+        SensitiveRequestContext session = this.guard.newSession();
+        String enveloped = "{\"content\":[{\"type\":\"text\",\"text\":"
+                + JsonMapper.builder().build().writeValueAsString(ORDER_COUNT) + "}]}";
+        ToolCallback[] tools = session.wrap(new ToolCallback[] { stubCallback(enveloped, "aggregate_records") });
+
+        tools[0].call("{\"entity\":\"Order\",\"function\":\"count\",\"field\":\"*\"}");
+
+        assertThat(session.resolvedTotalCount()).isEqualTo(120L);
+    }
+
+    @Test
+    void totalCountIsUnknownWhenTwoEntitiesWereCounted() {
+        SensitiveRequestContext session = this.guard.newSession();
+        ToolCallback[] tools = session.wrap(new ToolCallback[] {
+                stubCallback(ORDER_COUNT, "aggregate_records"), stubCallback(CUSTOMER_COUNT, "aggregate_records") });
+
+        tools[0].call("{\"entity\":\"Order\",\"function\":\"count\",\"field\":\"*\"}");
+        tools[1].call("{\"entity\":\"Customer\",\"function\":\"count\",\"field\":\"*\"}");
+
+        assertThat(session.resolvedTotalCount()).isEqualTo(ChatResponse.UNKNOWN_TOTAL);
+    }
+
+    @Test
+    void totalCountIsUnknownWhenTheCountedEntityIsNotTheOneRead() {
+        SensitiveRequestContext session = this.guard.newSession();
+        ToolCallback[] tools = session.wrap(new ToolCallback[] {
+                stubCallback(ORDER_ROWS, "read_records"), stubCallback(CUSTOMER_COUNT, "aggregate_records") });
+
+        tools[0].call("{\"entity\":\"Order\",\"first\":2}");
+        tools[1].call("{\"entity\":\"Customer\",\"function\":\"count\",\"field\":\"*\"}");
+
+        assertThat(session.resolvedTotalCount()).isEqualTo(ChatResponse.UNKNOWN_TOTAL);
+    }
+
+    @Test
+    void totalCountIsUnknownWhenTheReadFilterDoesNotMatchTheCountFilter() {
+        SensitiveRequestContext session = this.guard.newSession();
+        ToolCallback[] tools = session.wrap(new ToolCallback[] {
+                stubCallback(ORDER_ROWS, "read_records"), stubCallback(ORDER_COUNT, "aggregate_records") });
+
+        tools[0].call("{\"entity\":\"Order\",\"filter\":\"OrderStatus eq 'Delivered'\",\"first\":2}");
+        tools[1].call("{\"entity\":\"Order\",\"function\":\"count\",\"field\":\"*\"}");
+
+        assertThat(session.resolvedTotalCount()).isEqualTo(ChatResponse.UNKNOWN_TOTAL);
+    }
+
+    @Test
+    void groupedCountIsNotTreatedAsTheMatchingRecordTotal() {
+        SensitiveRequestContext session = this.guard.newSession();
+        ToolCallback[] tools = session.wrap(new ToolCallback[] {
+                stubCallback(ORDER_COUNT, "aggregate_records") });
+
+        tools[0].call("{\"entity\":\"Order\",\"function\":\"count\",\"field\":\"*\","
+                + "\"groupby\":[\"OrderStatus\"]}");
+
+        assertThat(session.resolvedTotalCount()).isEqualTo(ChatResponse.UNKNOWN_TOTAL);
     }
 }

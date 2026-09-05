@@ -35,9 +35,7 @@ public class SensitiveDataGuard {
     /** Lower-cased field name -> token prefix. Matching is by field name across all entities. */
     private final Map<String, String> prefixByField;
 
-    private final JavaPiiProtector piiProtector;
-
-    private final SensitivePayloadProtector payloadProtector;
+    private final AppProperties.DataPolicy dataPolicy;
 
     public SensitiveDataGuard(AppProperties properties, ObjectMapper objectMapper,
             LocalAiTraceLogger traceLogger) {
@@ -46,11 +44,18 @@ public class SensitiveDataGuard {
         this.prefixByField = properties.sensitiveFields().stream()
                 .collect(Collectors.toMap(field -> field.field().toLowerCase(),
                         AppProperties.SensitiveField::prefixOrDefault, (first, second) -> first));
-        this.piiProtector = new JavaPiiProtector();
-        this.payloadProtector = new SensitivePayloadProtector(objectMapper, this.prefixByField,
-                this.piiProtector);
-        logger.info("Java request-local PII protection active for {} configured sensitive field(s): {}",
-                this.prefixByField.size(), this.prefixByField.keySet());
+        this.dataPolicy = properties.security().dataPolicy();
+        logger.info("Java request-local PII protection active: {} named sensitive field(s) {}, "
+                        + "deny-by-default row protection for tool(s) {} with {} safe column(s) {}",
+                this.prefixByField.size(), this.prefixByField.keySet(), this.dataPolicy.rowDataTools(),
+                this.dataPolicy.safeColumns().size(), this.dataPolicy.safeColumns());
+        if (!JavaPiiProtector.personNameModelAvailable()) {
+            // Silence here would be worse than the gap: the rest of the startup log reads as if
+            // every detector were running.
+            logger.warn("Apache OpenNLP person-name model 'en-ner-person.bin' is NOT on the classpath. "
+                    + "Person-name detection in free text falls back to the cue-word pattern alone; "
+                    + "names phrased outside that pattern will not be detected in user input.");
+        }
     }
 
     public SensitiveRequestContext newSession() {
@@ -65,8 +70,13 @@ public class SensitiveDataGuard {
 
     /** @param onStep receives a short human-readable note each time a tool is about to run. */
     public SensitiveRequestContext newSession(String requestId, java.util.function.Consumer<String> onStep) {
+        // A protector per turn: the token vault holds raw PII, so it must not outlive the
+        // request or be visible to another one.
+        JavaPiiProtector piiProtector = new JavaPiiProtector();
+        SensitivePayloadProtector payloadProtector = new SensitivePayloadProtector(this.objectMapper,
+                this.prefixByField, this.dataPolicy, piiProtector);
         return new SensitiveRequestContext(StringUtils.hasText(requestId) ? requestId : "none", onStep,
-                this.objectMapper, this.traceLogger, this.piiProtector, this.payloadProtector,
+                this.objectMapper, this.traceLogger, piiProtector, payloadProtector,
                 this.prefixByField.keySet());
     }
 

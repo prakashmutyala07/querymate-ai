@@ -174,7 +174,7 @@ class ChatModelRunnerTests {
                 new AppProperties.Execution(true, primaryRetryEnabled, 1200, 0.1, Duration.ofSeconds(10),
                         responseFormat),
                 new AppProperties.Memory(20),
-                new AppProperties.Security(), new AppProperties.Logging(false),
+                new AppProperties.Security(null), new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(false, false, 20_000)), List.of());
         LocalAiTraceLogger traceLogger = new LocalAiTraceLogger(properties,
                 new org.springframework.mock.env.MockEnvironment());

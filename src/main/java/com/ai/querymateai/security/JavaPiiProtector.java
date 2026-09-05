@@ -22,14 +22,33 @@ import com.google.i18n.phonenumbers.PhoneNumberUtil;
 
 final class JavaPiiProtector {
 
+    /** Below this length a vaulted value matches too much ordinary text to be a useful signal. */
+    private static final int MIN_LEAK_CHECK_LENGTH = 3;
+
+    /** A plain word shorter than this collides with ordinary prose too often to accuse. */
+    private static final int MIN_PLAIN_WORD_LEAK_CHECK_LENGTH = 9;
+
     private static final Pattern PROTECTED_VALUE =
             Pattern.compile("\\b(?:CustomerName|Email|Phone|SensitiveValue)Protected#\\d+\\b");
 
     private static final Pattern EMAIL_CANDIDATE =
             Pattern.compile("(?<!\\S)[^\\s@]+@[^\\s@]+(?!\\S)");
 
+    /**
+     * Cue words are matched case-insensitively, but the captured name must genuinely look like
+     * a proper noun. The {@code (?i)} flag used to lead the whole pattern, which silently made
+     * {@code [A-Z]} match lowercase too and let any run of ordinary words following a cue be
+     * captured as a name: "No customer record was found matching" yielded "record was found
+     * matching". Keep the flag scoped to the cue groups.
+     */
     private static final Pattern CUSTOMER_NAME =
-            Pattern.compile("(?i)\\b(?:find|show|get|lookup|locate)?\\s*(?:customer|contact|person|customer\\s+named|customer\\s+name|fullname|full\\s+name|name)\\s+(?:(?:details|profile|record|information)\\s+(?:of|for)\\s+|named|called|with\\s+name|is|=|eq\\s+)?([A-Z][A-Za-z'’-]+(?:\\s+[A-Z][A-Za-z'’-]+){1,3})");
+            Pattern.compile("\\b(?i:find|show|get|lookup|locate)?\\s*(?i:customer|contact|person|customer\\s+named|customer\\s+name|fullname|full\\s+name|name)\\s+(?i:(?:details|profile|record|information)\\s+(?:of|for)\\s+|named|called|with\\s+name|is|=|eq\\s+)?([A-Z][A-Za-z'’-]+(?:\\s+[A-Z][A-Za-z'’-]+){1,3})");
+
+    /**
+     * Loaded once per JVM. {@link TokenNameFinderModel} is immutable and shareable, while
+     * {@link NameFinderME} is not, so each protector builds its own finder over this model.
+     */
+    private static final TokenNameFinderModel PERSON_NAME_MODEL = personNameModel();
 
     private final PhoneNumberUtil phoneNumberUtil = PhoneNumberUtil.getInstance();
 
@@ -128,6 +147,49 @@ final class JavaPiiProtector {
         return count;
     }
 
+    /**
+     * Names of the tokens whose raw value appears verbatim in {@code payload}. Ground truth
+     * for the egress firewall: a non-empty result means protection failed upstream.
+     *
+     * <p>Matching is case-insensitive and substring-based, which is deliberately blunt: a
+     * value that reached an outbound payload at all is a failure regardless of framing.
+     */
+    List<String> tokensLeakedIn(String payload) {
+        if (!StringUtils.hasText(payload) || this.rawByToken.isEmpty()) {
+            return List.of();
+        }
+        String haystack = payload.toLowerCase(Locale.ROOT);
+        List<String> leaked = new ArrayList<>();
+        for (Map.Entry<String, String> entry : this.rawByToken.entrySet()) {
+            String raw = entry.getValue();
+            if (distinctiveEnoughToAccuse(raw) && haystack.contains(raw.toLowerCase(Locale.ROOT))) {
+                leaked.add(entry.getKey());
+            }
+        }
+        return leaked;
+    }
+
+    /**
+     * Whether finding {@code raw} in an outbound payload is evidence of a leak rather than a
+     * coincidence.
+     *
+     * <p>A short single word is not: a LoyaltyTier of "Gold" also appears in the schema's own
+     * description of that column, and blocking on it fails a request that was correctly
+     * protected. Values that carry a space, digit or punctuation - full names, emails, phone
+     * numbers, identifiers - do not collide with prose, so they are always checked.
+     */
+    private static boolean distinctiveEnoughToAccuse(String raw) {
+        if (raw.length() < MIN_LEAK_CHECK_LENGTH) {
+            return false;
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            if (!Character.isLetter(raw.charAt(i))) {
+                return true;
+            }
+        }
+        return raw.length() >= MIN_PLAIN_WORD_LEAK_CHECK_LENGTH;
+    }
+
     int resolvedProtectedValueCount(String before, String after) {
         if (!StringUtils.hasText(before) || before.equals(after)) {
             return 0;
@@ -185,11 +247,8 @@ final class JavaPiiProtector {
         }
         opennlp.tools.util.Span[] tokenSpans = SimpleTokenizer.INSTANCE.tokenizePos(text);
         String[] tokens = opennlp.tools.util.Span.spansToStrings(tokenSpans, text);
-        opennlp.tools.util.Span[] names;
-        synchronized (this.personNameFinder) {
-            names = this.personNameFinder.find(tokens);
-            this.personNameFinder.clearAdaptiveData();
-        }
+        opennlp.tools.util.Span[] names = this.personNameFinder.find(tokens);
+        this.personNameFinder.clearAdaptiveData();
         for (opennlp.tools.util.Span name : names) {
             if (name.length() < 2) {
                 continue;
@@ -266,7 +325,20 @@ final class JavaPiiProtector {
         if (token.startsWith("PhoneProtected#")) {
             return maskPhone(raw);
         }
-        return "ProtectedValue";
+        return maskGeneric(raw);
+    }
+
+    /**
+     * Display form for a value protected by the deny-by-default policy rather than by an
+     * explicit field rule. Its column is unclassified, so show only enough to tell two rows
+     * apart; a fixed placeholder would render every protected cell identical.
+     */
+    private static String maskGeneric(String value) {
+        String trimmed = value.strip();
+        if (trimmed.length() <= 2) {
+            return "***";
+        }
+        return trimmed.substring(0, 2) + "***";
     }
 
     private static String maskEmail(String value) {
@@ -340,7 +412,16 @@ final class JavaPiiProtector {
         return "SensitiveValueProtected";
     }
 
+    /** Whether the Apache OpenNLP person-name model was found on the classpath. */
+    static boolean personNameModelAvailable() {
+        return PERSON_NAME_MODEL != null;
+    }
+
     private static NameFinderME personNameFinder() {
+        return PERSON_NAME_MODEL == null ? null : new NameFinderME(PERSON_NAME_MODEL);
+    }
+
+    private static TokenNameFinderModel personNameModel() {
         try {
             ClassLoader loader = JavaPiiProtector.class.getClassLoader();
             java.io.InputStream model = loader.getResourceAsStream("en-ner-person.bin");
@@ -351,7 +432,7 @@ final class JavaPiiProtector {
                 return null;
             }
             try (java.io.InputStream modelStream = model) {
-                return new NameFinderME(new TokenNameFinderModel(modelStream));
+                return new TokenNameFinderModel(modelStream);
             }
         }
         catch (java.io.IOException ex) {

@@ -63,16 +63,18 @@ public class ChatCoordinator implements ChatOperations {
         SensitiveRequestContext guardSession =
                 this.sensitiveDataGuard.newSession(requestId, step -> progressSink.progress("tool", step));
         String protectedMessage = guardSession.protectInput(message);
-        ToolCallback[] tools = guardSession.wrap(this.mcpToolCatalog.toolCallbacksOrEmpty());
-        progressSink.progress("mcp", "Connected to DAB (" + tools.length + " tools).");
-
-        List<Message> history = this.chatMemory.get(resolvedConversationId);
+        // Everything this thread sends to the model provider from here on is verified against
+        // this turn's vault; unbound in the finally block below.
+        guardSession.bindToEgress();
         try {
+            ToolCallback[] tools = guardSession.wrap(this.mcpToolCatalog.toolCallbacksOrEmpty());
+            progressSink.progress("mcp", "Connected to DAB (" + tools.length + " tools).");
+            List<Message> history = this.chatMemory.get(resolvedConversationId);
             ChatModelRunner.Result result = this.modelRunner.run(protectedMessage, this.promptProvider.systemPrompt(),
                     history, tools, guardSession, progressSink, requestId);
             long structuredStartedAt = System.nanoTime();
             ChatResponse protectedResponse = ChatResponse.from(resolvedConversationId, result.model(), result.fallbackUsed(),
-                    result.answer(), guardSession.toolInvocations() > 0);
+                    result.answer(), guardSession.toolInvocations() > 0, guardSession.resolvedTotalCount());
             ChatResponse uiResponse = guardSession.toUiResponse(protectedResponse);
             storeSanitizedTurn(resolvedConversationId, protectedMessage, protectedResponse);
             logger.info("Chat response structured requestId={} conversationId={} status={} rows={} "
@@ -88,6 +90,7 @@ public class ChatCoordinator implements ChatOperations {
             throw ex;
         }
         finally {
+            guardSession.unbindFromEgress();
             progressSink.progress("done", "Composing answer\u2026");
         }
     }

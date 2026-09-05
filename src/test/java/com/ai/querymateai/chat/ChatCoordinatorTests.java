@@ -105,7 +105,7 @@ class ChatCoordinatorTests {
                 new AppProperties.Execution(true, false, 1200, 0.1, Duration.ofSeconds(10),
                         AppProperties.ResponseFormat.JSON_SCHEMA),
                 new AppProperties.Memory(20),
-                new AppProperties.Security(),
+                new AppProperties.Security(null),
                 new AppProperties.Logging(localSensitiveMode),
                 new AppProperties.Ai(new AppProperties.Trace(localSensitiveMode, localSensitiveMode, 20_000)),
                 List.of(new AppProperties.SensitiveField("Customer", "Email", "EM"),

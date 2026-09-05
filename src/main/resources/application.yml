@@ -61,8 +61,10 @@ app:
     max-completion-tokens: ${APP_MAX_COMPLETION_TOKENS:1200}
     temperature: ${APP_TEMPERATURE:0.1}
     request-timeout: ${APP_REQUEST_TIMEOUT:30s}
-    # Supported values: json_schema (provider-enforced) and prompt_json (prompt-enforced).
-    response-format: ${APP_RESPONSE_FORMAT:prompt_json}
+    # json_schema makes the provider enforce the response shape, so the schema no longer has to
+    # be appended to the system prompt and asked for politely. prompt_json remains available for
+    # providers that cannot enforce it.
+    response-format: ${APP_RESPONSE_FORMAT:json_schema}
   memory:
     max-messages: ${APP_MEMORY_MAX_MESSAGES:20}
   ai:
@@ -70,9 +72,50 @@ app:
       enabled: ${APP_AI_TRACE_ENABLED:false}
       include-sensitive-values: ${APP_AI_TRACE_INCLUDE_SENSITIVE_VALUES:false}
       max-payload-chars: ${APP_AI_TRACE_MAX_PAYLOAD_CHARS:20000}
-  # entity.field pairs protected before any tool result reaches the model.
-  # City/StateProvince/Country are deliberately NOT listed: they are coarse
-  # geography needed for regional aggregation, not direct identifiers.
+  security:
+    # Deny-by-default for rows returned by the row-data tools: any column not listed here
+    # is protected before the model sees it, so a column added by a later migration fails
+    # closed instead of being forwarded. Widen this list deliberately, never by reflex.
+    data-policy:
+      safe-columns:
+        # Approved identifiers, measures, and aggregate output.
+        - CustomerId
+        - CategoryId
+        - ProductId
+        - OrderId
+        - OrderItemId
+        - PaymentId
+        - ShipmentId
+        - ReviewId
+        - UnitPrice
+        - Cost
+        - InventoryQuantity
+        - Subtotal
+        - TaxAmount
+        - ShippingAmount
+        - TotalAmount
+        - Quantity
+        - DiscountAmount
+        - LineTotal
+        - Amount
+        - Rating
+        - count
+        # Approved descriptive values.
+        - City
+        - StateProvince
+        - Country
+        - LoyaltyTier
+        - Status
+        - OrderStatus
+        - SalesChannel
+        - OrderDate
+        - CategoryName
+        - ProductName
+      # This overrides safe-columns for a numeric column when a deployment needs stricter handling.
+      sensitive-numeric-columns: []
+  # entity.field pairs protected before any tool result reaches the model. These stay
+  # explicit so their token type is CustomerName/Email/Phone rather than the generic
+  # SensitiveValue label the deny-by-default path assigns.
   sensitive-fields:
     - entity: Customer
       field: FullName

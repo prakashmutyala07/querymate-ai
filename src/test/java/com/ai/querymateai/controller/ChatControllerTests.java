@@ -137,7 +137,7 @@ class ChatControllerTests {
     void chatMapsStructuredServiceResponse() {
         this.aiChatService.chatResponse = new ChatResponse("demo", "gpt-4.1-mini", false, Status.ANSWER,
                 "There are 4 entities.", List.of("Entity"), List.of(List.of("Customer"), List.of("Order")), true,
-                false, "metadata only", "");
+                false, ChatResponse.UNKNOWN_TOTAL, "metadata only", "");
 
         ChatResponse response = this.controller
                 .chat(new ChatController.ChatRequest("List entities", "demo"))
@@ -180,7 +180,7 @@ class ChatControllerTests {
     static class FakeAiChatOperations implements ChatOperations {
 
         private ChatResponse chatResponse = new ChatResponse("demo", "model", false, Status.ANSWER, "", List.of(),
-                List.of(), false, false, "", "");
+                List.of(), false, false, ChatResponse.UNKNOWN_TOTAL, "", "");
 
         private final List<String> clearedConversations = new ArrayList<>();
 

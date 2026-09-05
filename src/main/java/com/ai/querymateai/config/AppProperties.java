@@ -9,7 +9,7 @@ public record AppProperties(Models models, Execution execution, Memory memory,
         Security security, Logging logging, Ai ai, List<SensitiveField> sensitiveFields) {
 
     public AppProperties {
-        security = security == null ? new Security() : security;
+        security = security == null ? new Security(null) : security;
         logging = logging == null ? new Logging(false) : logging;
         ai = ai == null ? new Ai(null) : ai;
         sensitiveFields = sensitiveFields == null ? List.of() : List.copyOf(sensitiveFields);
@@ -37,7 +37,70 @@ public record AppProperties(Models models, Execution execution, Memory memory,
     public record Memory(int maxMessages) {
     }
 
-    public record Security() {
+    /**
+     * Must keep exactly one constructor: Spring Boot's value-object binder silently binds
+     * nothing when a record offers it a choice, which would leave the data policy empty and
+     * deny-by-default protecting every column.
+     */
+    public record Security(DataPolicy dataPolicy) {
+
+        public Security {
+            dataPolicy = dataPolicy == null ? new DataPolicy(null, null, null, null) : dataPolicy;
+        }
+    }
+
+    /**
+     * Deny-by-default policy for tool results: every string in a returned row is protected
+     * unless its column is declared safe here. A column nobody remembered to configure is
+     * therefore protected rather than forwarded, which is the opposite of listing sensitive
+     * fields one by one and hoping the list stays complete.
+     *
+     * <p>The policy applies only inside a row array, so the surrounding MCP and DAB envelope
+     * ({@code content}, {@code text}, {@code entity}, {@code message}, {@code status}) is left
+     * alone without having to enumerate transport keys, and no envelope key can collide with a
+     * real column name.
+     *
+     * @param safeColumns string or numeric columns whose values may reach the model as-is
+     * @param rowArrayKeys keys whose array value holds database rows
+     * @param sensitiveNumericColumns numeric columns that override the safe list and must be protected
+     * @param rowDataTools tools returning database rows; others (schema discovery) are left alone
+     */
+    public record DataPolicy(List<String> safeColumns, List<String> rowArrayKeys,
+            List<String> sensitiveNumericColumns, List<String> rowDataTools) {
+
+        private static final List<String> DEFAULT_ROW_ARRAY_KEYS = List.of("value", "result");
+
+        private static final List<String> DEFAULT_ROW_DATA_TOOLS =
+                List.of("read_records", "aggregate_records");
+
+        public DataPolicy {
+            safeColumns = lowerCased(safeColumns, List.of());
+            rowArrayKeys = lowerCased(rowArrayKeys, DEFAULT_ROW_ARRAY_KEYS);
+            sensitiveNumericColumns = lowerCased(sensitiveNumericColumns, List.of());
+            rowDataTools = lowerCased(rowDataTools, DEFAULT_ROW_DATA_TOOLS);
+        }
+
+        /** True when a column's value may be forwarded to the model without protection. */
+        public boolean isSafeColumn(String key) {
+            return key != null && this.safeColumns.contains(key.toLowerCase(java.util.Locale.ROOT));
+        }
+
+        public boolean isRowArrayKey(String key) {
+            return key != null && this.rowArrayKeys.contains(key.toLowerCase(java.util.Locale.ROOT));
+        }
+
+        public boolean isSensitiveNumericColumn(String key) {
+            return key != null && this.sensitiveNumericColumns.contains(key.toLowerCase(java.util.Locale.ROOT));
+        }
+
+        public boolean returnsRowData(String toolName) {
+            return toolName != null && this.rowDataTools.contains(toolName.toLowerCase(java.util.Locale.ROOT));
+        }
+
+        private static List<String> lowerCased(List<String> values, List<String> fallback) {
+            List<String> source = (values == null || values.isEmpty()) ? fallback : values;
+            return source.stream().map(value -> value.toLowerCase(java.util.Locale.ROOT)).toList();
+        }
     }
 
     public record Logging(boolean logSensitiveData) {

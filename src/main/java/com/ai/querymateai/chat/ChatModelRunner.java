@@ -117,6 +117,13 @@ public class ChatModelRunner {
                     .chatResponse();
         }
         catch (RuntimeException ex) {
+            if (egressBlocked(ex)) {
+                // A refusal to send is a security decision, not a provider failure. Retrying on
+                // the fallback model would re-send the same payload, and if that model answered
+                // from the truncated context the block would surface as a wrong answer instead
+                // of an error.
+                throw ex;
+            }
             throw new ModelCallException(model, ex, elapsedMillis(startedAt));
         }
 
@@ -140,6 +147,18 @@ public class ChatModelRunner {
                     List.of(), List.of(), false, "", "");
         }
         return new Result(model, fallbackUsed, sanitize(parsed, guardSession), protectedContent);
+    }
+
+    private static boolean egressBlocked(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof com.ai.querymateai.security.SensitiveEgressFirewall.SensitiveEgressBlockedException) {
+                return true;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return false;
     }
 
     private static ChatResponse.ModelAnswer sanitize(ChatResponse.ModelAnswer answer,

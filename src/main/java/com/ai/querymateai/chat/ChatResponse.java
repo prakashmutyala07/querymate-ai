@@ -7,7 +7,7 @@ import org.springframework.util.StringUtils;
 /** Stable response returned by both the JSON and SSE chat endpoints. */
 public record ChatResponse(String conversationId, String model, boolean fallbackUsed, Status status, String message,
         List<String> columns, List<List<String>> rows, boolean usedDatabaseTools, boolean partialResults,
-        String dataNotes, String followUpQuestion) {
+        long totalCount, String dataNotes, String followUpQuestion) {
 
     public ChatResponse {
         conversationId = safe(conversationId);
@@ -17,15 +17,32 @@ public record ChatResponse(String conversationId, String model, boolean fallback
         columns = columns == null ? List.of() : List.copyOf(columns);
         rows = rows == null ? List.of()
                 : rows.stream().map(row -> row == null ? List.<String>of() : List.copyOf(row)).toList();
+        totalCount = totalCount < 0 ? UNKNOWN_TOTAL : totalCount;
         dataNotes = safe(dataNotes);
         followUpQuestion = safe(followUpQuestion);
     }
 
+    /** {@link #totalCount()} when the matching-record total could not be attributed to one entity. */
+    public static final long UNKNOWN_TOTAL = -1L;
+
+    /**
+     * Merges the model's answer with facts the application observed for itself.
+     *
+     * <p>{@code totalCount} comes from the counting tool call, never from the model, so a
+     * hallucinated total cannot reach the caller. When it exceeds the rows actually shown, the
+     * answer is partial whatever the model claimed. A total with no rows is a plain count answer
+     * rather than a truncated list, so it does not force the flag.
+     */
     public static ChatResponse from(String conversationId, String model, boolean fallbackUsed, ModelAnswer answer,
-            boolean usedDatabaseTools) {
+            boolean usedDatabaseTools, long totalCount) {
         ModelAnswer safeAnswer = answer == null ? ModelAnswer.empty() : answer;
-        return new ChatResponse(conversationId, model, fallbackUsed, safeAnswer.resolvedStatus(), safeAnswer.answer(),
-                safeAnswer.columns(), safeAnswer.rows(), usedDatabaseTools, safeAnswer.partialResults(),
+        int shown = safeAnswer.rows().size();
+        boolean truncated = totalCount > shown && shown > 0;
+        Status status = truncated && safeAnswer.resolvedStatus() == Status.ANSWER
+                ? Status.PARTIAL : safeAnswer.resolvedStatus();
+        return new ChatResponse(conversationId, model, fallbackUsed, status, safeAnswer.answer(),
+                safeAnswer.columns(), safeAnswer.rows(), usedDatabaseTools,
+                safeAnswer.partialResults() || truncated, totalCount,
                 safeAnswer.dataNotes(), safeAnswer.followUpQuestion());
     }
 

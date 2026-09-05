@@ -8,6 +8,10 @@
     }
   },
   "runtime": {
+    "pagination": {
+      "default-page-size": 25,
+      "max-page-size": 100
+    },
     "rest": {
       "enabled": false,
       "path": "/api",

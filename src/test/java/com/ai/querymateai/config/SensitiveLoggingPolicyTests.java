@@ -50,7 +50,7 @@ class SensitiveLoggingPolicyTests {
                 new AppProperties.Execution(true, false, 1200, 0.1, Duration.ofSeconds(10),
                         AppProperties.ResponseFormat.JSON_SCHEMA),
                 new AppProperties.Memory(20),
-                new AppProperties.Security(),
+                new AppProperties.Security(null),
                 new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(traceEnabled, includeSensitiveValues, 20_000)),
                 List.of());
