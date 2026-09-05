@@ -19,19 +19,98 @@ import com.ai.querymateai.mcp.McpToolCatalog;
 
 class ChatControllerTests {
 
+    private static final int TEST_MAX_MESSAGE_CHARS = 80;
+
     private final FakeAiChatOperations aiChatService = new FakeAiChatOperations();
 
     private final ChatController controller = new ChatController(this.aiChatService,
-            new SameThreadAsyncTaskExecutor());
+            new SameThreadAsyncTaskExecutor(), TEST_MAX_MESSAGE_CHARS);
 
     @Test
-    void chatRequiresMessage() {
+    void chatAcceptsValidNormalRequest() {
+        this.controller.chat(new ChatController.ChatRequest("List entities", "demo"));
+
+        assertThat(this.aiChatService.chatRequests).isEqualTo(1);
+        assertThat(this.aiChatService.lastMessage).isEqualTo("List entities");
+    }
+
+    @Test
+    void chatRejectsWhitespaceOnlyMessage() {
         ChatController.ChatRequest request = new ChatController.ChatRequest(" ", "demo");
 
         assertThatThrownBy(() -> this.controller.chat(request))
                 .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Message must not be blank.")
                 .extracting("statusCode")
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(this.aiChatService.chatRequests).isZero();
+    }
+
+    @Test
+    void chatRejectsEmptyMessage() {
+        ChatController.ChatRequest request = new ChatController.ChatRequest("", "demo");
+
+        assertThatThrownBy(() -> this.controller.chat(request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Message must not be blank.")
+                .extracting("statusCode")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(this.aiChatService.chatRequests).isZero();
+    }
+
+    @Test
+    void chatRejectsMissingMessage() {
+        ChatController.ChatRequest request = new ChatController.ChatRequest(null, "demo");
+
+        assertThatThrownBy(() -> this.controller.chat(request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Message must not be blank.")
+                .extracting("statusCode")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(this.aiChatService.chatRequests).isZero();
+    }
+
+    @Test
+    void chatRejectsMissingRequestBody() {
+        assertThatThrownBy(() -> this.controller.chat(null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Request body is required.")
+                .extracting("statusCode")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(this.aiChatService.chatRequests).isZero();
+    }
+
+    @Test
+    void chatAcceptsMessageAtMaximumLength() {
+        String message = "x".repeat(TEST_MAX_MESSAGE_CHARS);
+
+        this.controller.chat(new ChatController.ChatRequest(message, "demo"));
+
+        assertThat(this.aiChatService.chatRequests).isEqualTo(1);
+        assertThat(this.aiChatService.lastMessage).isEqualTo(message);
+    }
+
+    @Test
+    void chatRejectsMessageExceedingMaximumLength() {
+        ChatController.ChatRequest request = new ChatController.ChatRequest(
+                "x".repeat(TEST_MAX_MESSAGE_CHARS + 1), "demo");
+
+        assertThatThrownBy(() -> this.controller.chat(request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Message exceeds the maximum allowed length.")
+                .extracting("statusCode")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(this.aiChatService.chatRequests).isZero();
+    }
+
+    @Test
+    void chatAcceptsComplexNaturalLanguageDatabaseQuestion() {
+        String question = "Top 5 orders by revenue, grouped by region?";
+
+        this.controller.chat(new ChatController.ChatRequest(question, "demo"));
+
+        assertThat(this.aiChatService.chatRequests).isEqualTo(1);
+        assertThat(this.aiChatService.lastMessage).isEqualTo(question);
     }
 
     @Test
@@ -42,6 +121,7 @@ class ChatControllerTests {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting("statusCode")
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(this.aiChatService.chatRequests).isZero();
     }
 
     @Test
@@ -104,13 +184,21 @@ class ChatControllerTests {
 
         private final List<String> clearedConversations = new ArrayList<>();
 
+        private int chatRequests;
+
+        private String lastMessage;
+
         @Override
         public ChatResponse chat(String message, String conversationId) {
+            this.chatRequests++;
+            this.lastMessage = message;
             return this.chatResponse;
         }
 
         @Override
         public ChatResponse chat(String message, String conversationId, ProgressSink progressSink) {
+            this.chatRequests++;
+            this.lastMessage = message;
             return this.chatResponse;
         }
 

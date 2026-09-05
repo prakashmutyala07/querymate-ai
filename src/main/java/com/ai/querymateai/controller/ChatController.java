@@ -3,10 +3,11 @@ package com.ai.querymateai.controller;
 import java.io.IOException;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +30,8 @@ public class ChatController {
     /** Covers the default primary call, retry, fallback, and a small delivery margin. */
     private static final long SSE_TIMEOUT_MILLIS = 390_000L;
 
+    private static final int DEFAULT_MAX_MESSAGE_CHARS = 8_000;
+
     private static final java.util.regex.Pattern CONVERSATION_ID =
             java.util.regex.Pattern.compile("[A-Za-z0-9_-]{1,128}");
 
@@ -36,9 +39,13 @@ public class ChatController {
 
     private final AsyncTaskExecutor chatTaskExecutor;
 
-    public ChatController(ChatOperations chatCoordinator, AsyncTaskExecutor chatTaskExecutor) {
+    private final int maxMessageChars;
+
+    public ChatController(ChatOperations chatCoordinator, AsyncTaskExecutor chatTaskExecutor,
+            @Value("${app.chat.max-message-chars:" + DEFAULT_MAX_MESSAGE_CHARS + "}") int maxMessageChars) {
         this.chatCoordinator = chatCoordinator;
         this.chatTaskExecutor = chatTaskExecutor;
+        this.maxMessageChars = maxMessageChars > 0 ? maxMessageChars : DEFAULT_MAX_MESSAGE_CHARS;
     }
 
     @GetMapping("/mcp/tools")
@@ -48,14 +55,14 @@ public class ChatController {
 
     @PostMapping("/chat")
     public ResponseEntity<ChatResponse> chat(@RequestBody ChatRequest request) {
-        validate(request);
+        validate(request, this.maxMessageChars);
 
         return ResponseEntity.ok(this.chatCoordinator.chat(request.message(), request.conversationId()));
     }
 
     @PostMapping(path = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(@RequestBody ChatRequest request) {
-        validate(request);
+        validate(request, this.maxMessageChars);
 
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         this.chatTaskExecutor.execute(() -> {
@@ -107,9 +114,16 @@ public class ChatController {
         return "Chat request failed.";
     }
 
-    private static void validate(ChatRequest request) {
-        if (request == null || !StringUtils.hasText(request.message())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
+    private static void validate(ChatRequest request, int maxMessageChars) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request body is required.");
+        }
+        if (!StringUtils.hasText(request.message())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message must not be blank.");
+        }
+        if (request.message().length() > maxMessageChars) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Message exceeds the maximum allowed length.");
         }
         if (StringUtils.hasText(request.conversationId())) {
             validateConversationId(request.conversationId());
