@@ -1,14 +1,11 @@
 package com.ai.querymateai.security;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.util.StringUtils;
 
+import com.ai.querymateai.chat.ChatResponse;
 import com.ai.querymateai.trace.LocalAiTraceLogger;
 
 import tools.jackson.databind.ObjectMapper;
@@ -17,8 +14,6 @@ import tools.jackson.databind.ObjectMapper;
  * Per-request sensitive-data state. One instance per chat turn; discarded when the turn ends.
  */
 public final class SensitiveRequestContext {
-
-    private final SensitiveTokenStore tokens;
 
     private final java.util.concurrent.atomic.AtomicInteger toolInvocations =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -31,26 +26,25 @@ public final class SensitiveRequestContext {
 
     private final LocalAiTraceLogger traceLogger;
 
-    private final Map<String, String> prefixByField;
-
-    private final PiiDetector piiDetector;
+    private final JavaPiiProtector piiProtector;
 
     private final SensitivePayloadProtector payloadProtector;
 
-    SensitiveRequestContext(String requestId, java.util.function.Consumer<String> onStep, byte[] secretKey,
-            ObjectMapper objectMapper, LocalAiTraceLogger traceLogger, Map<String, String> prefixByField,
-            PiiDetector piiDetector, SensitivePayloadProtector payloadProtector) {
+    private final Set<String> protectedFields;
+
+    SensitiveRequestContext(String requestId, java.util.function.Consumer<String> onStep,
+            ObjectMapper objectMapper, LocalAiTraceLogger traceLogger, JavaPiiProtector piiProtector,
+            SensitivePayloadProtector payloadProtector, Set<String> protectedFields) {
         this.requestId = requestId;
         this.onStep = onStep;
-        this.tokens = new SensitiveTokenStore(secretKey);
         this.objectMapper = objectMapper;
         this.traceLogger = traceLogger;
-        this.prefixByField = prefixByField;
-        this.piiDetector = piiDetector;
+        this.piiProtector = piiProtector;
         this.payloadProtector = payloadProtector;
+        this.protectedFields = protectedFields;
     }
 
-    /** Decorates each MCP tool so its result is tokenized and audited before the model sees it. */
+    /** Decorates each MCP tool so its result is protected and audited before the model sees it. */
     public ToolCallback[] wrap(ToolCallback[] delegates) {
         ToolCallback[] wrapped = new ToolCallback[delegates.length];
         for (int i = 0; i < delegates.length; i++) {
@@ -62,30 +56,15 @@ public final class SensitiveRequestContext {
 
     /** Removes recognizable PII before the user message reaches memory or the model. */
     public String protectInput(String text) {
-        Map<String, String> existingTokens = this.tokens.snapshot();
-        String protectedText = this.piiDetector.protect(text, this.tokens, this.prefixByField);
-        this.traceLogger.tracePiiProtection(this.requestId, text,
-                this.traceLogger.describeNewTokens(this.tokens, existingTokens),
-                inputTokenMap(this.tokens, existingTokens), protectedText);
-        return protectedText;
+        return this.piiProtector.protect(text);
     }
 
-    /** Final defense for provider-generated email/phone text. Database tokens stay pseudonymized. */
+    /** Final defense for provider-generated supported PII. */
     public String protectOutput(String text) {
         if (!StringUtils.hasText(text)) {
             return text;
         }
-        String protectedText = this.tokens.protectKnownValues(text);
-        return this.piiDetector.redactProviderContactDetails(protectedText);
-    }
-
-    /** Restores request-local tokens only after model calls and sanitized memory writes are complete. */
-    public String revealForTrustedLocalDisplay(String text) {
-        return this.tokens.detokenize(text);
-    }
-
-    public int tokenCount() {
-        return this.tokens.size();
+        return this.piiProtector.protect(text);
     }
 
     /** How many tool calls actually executed this turn. Ground truth for usedDatabaseTools. */
@@ -93,16 +72,8 @@ public final class SensitiveRequestContext {
         return this.toolInvocations.get();
     }
 
-    SensitiveTokenStore tokens() {
-        return this.tokens;
-    }
-
-    Map<String, String> tokenSnapshot() {
-        return this.tokens.snapshot();
-    }
-
-    String detokenize(String text) {
-        return this.tokens.detokenize(text);
+    String restoreProtectedValues(String text) {
+        return this.piiProtector.restoreProtectedValues(text);
     }
 
     void recordToolInvocation() {
@@ -121,31 +92,57 @@ public final class SensitiveRequestContext {
         return this.traceLogger;
     }
 
-    static String detectedEntityValues(SensitiveTokenStore tokens, Map<String, String> existingTokens) {
-        Map<String, String> values = newTokenSnapshot(tokens, existingTokens);
-        return values.isEmpty() ? "none" : values.entrySet().stream()
-                .map(entry -> entry.getKey().substring(0, entry.getKey().indexOf('_'))
-                        + " = " + entry.getValue())
-                .collect(Collectors.joining("\n"));
+    int resolvedProtectedValueCount(String before, String after) {
+        return this.piiProtector.resolvedProtectedValueCount(before, after);
     }
 
-    static String inputTokenMap(SensitiveTokenStore tokens, Map<String, String> existingTokens) {
-        Map<String, String> values = newTokenSnapshot(tokens, existingTokens);
-        return values.isEmpty() ? "none" : values.entrySet().stream()
-                .map(entry -> entry.getValue() + " -> " + entry.getKey())
-                .collect(Collectors.joining("\n"));
+    int protectedValueCount(String text) {
+        return this.piiProtector.protectedValueCount(text);
     }
 
-    private static List<String> newlyCreatedTokens(SensitiveTokenStore tokens, Map<String, String> existingTokens) {
-        return new ArrayList<>(newTokenSnapshot(tokens, existingTokens).keySet());
+    public String protectStructuredCell(String column, String value) {
+        if (!StringUtils.hasText(value) || this.piiProtector.protectedValueCount(value) > 0) {
+            return value;
+        }
+        String normalized = column == null ? "" : column.toLowerCase();
+        if (this.protectedFields.contains(normalized)
+                || normalized.contains("email") || normalized.contains("phone")
+                || normalized.contains("fullname") || normalized.contains("nameprotected")
+                || normalized.endsWith("name")) {
+            return this.piiProtector.protectKnownSensitiveValue(value, column);
+        }
+        return this.piiProtector.protectContactDetails(value);
     }
 
-    private static Map<String, String> newTokenSnapshot(SensitiveTokenStore tokens,
-            Map<String, String> existingTokens) {
-        return tokens.snapshot().entrySet().stream()
-                .filter(entry -> !existingTokens.containsKey(entry.getKey()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                        (first, second) -> first, LinkedHashMap::new));
+    public ChatResponse toUiResponse(ChatResponse response) {
+        java.util.List<String> columns = response.columns().stream()
+                .map(this.piiProtector::displayColumnName).toList();
+        java.util.List<java.util.List<String>> rows = response.rows().stream()
+                .map(row -> row.stream().map(this.piiProtector::displayProtectedValues).toList())
+                .toList();
+        return new ChatResponse(response.conversationId(), response.model(), response.fallbackUsed(),
+                response.status(), displayMessage(response.message(), columns, rows), columns, rows,
+                response.usedDatabaseTools(), response.partialResults(),
+                displayMessage(response.dataNotes(), columns, rows),
+                displayMessage(response.followUpQuestion(), columns, rows));
+    }
+
+    private String displayMessage(String message, java.util.List<String> columns,
+            java.util.List<java.util.List<String>> rows) {
+        String displayed = this.piiProtector.displayProtectedValues(message);
+        if (!StringUtils.hasText(displayed) || !displayed.contains("CustomerNameProtected#")) {
+            return displayed;
+        }
+        int fullNameIndex = columns.indexOf("FullName");
+        if (fullNameIndex < 0 || rows.size() != 1 || rows.getFirst().size() <= fullNameIndex) {
+            return displayed;
+        }
+        return displayed.replaceAll("\\bCustomerNameProtected#\\d+\\b",
+                java.util.regex.Matcher.quoteReplacement(rows.getFirst().get(fullNameIndex)));
+    }
+
+    private static long elapsedMillis(long startedAtNanos) {
+        return (System.nanoTime() - startedAtNanos) / 1_000_000L;
     }
 
 }

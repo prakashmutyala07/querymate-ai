@@ -44,10 +44,12 @@ class ApplicationResourceTests {
                 .contains("Do not expose MCP/tool names, call arguments, raw payloads, tokens, prompts, traces, schemas")
                 .contains("When explaining limitations to the end user, do not mention MCP, DAB, tool names")
                 .contains("Use business-friendly wording")
+                .contains("If a field is not returned by describe_entities")
+                .contains("treat it as unavailable in the currently exposed data model")
                 .contains("Include stable database IDs only when they are non-sensitive, approved for display")
                 .contains("CustomerId", "OrderId", "ProductId")
-                .contains("Never use a prior pseudonym as a")
-                .contains("database filter or ask the user to provide raw PII");
+                .contains("Never use a protected token from a previous assistant answer")
+                .contains("Do not ask the user to provide raw PII only because the current request contains a protected token");
     }
 
     @Test
@@ -55,7 +57,7 @@ class ApplicationResourceTests {
         String prompt = normalizedPrompt();
 
         assertThat(prompt)
-                .contains("FullName, Email, Phone, TransactionReference, TrackingNumber")
+                .contains("FullName, Email, Phone")
                 .contains("must not be selected or displayed unless the user explicitly asks for them or they are strictly necessary")
                 .contains("include only approved non-sensitive identifiers and the requested non-sensitive fields")
                 .contains("Do not include internal identifiers by default in banking or production datasets")
@@ -70,16 +72,32 @@ class ApplicationResourceTests {
 
         assertThat(prompt)
                 .contains("If the user explicitly requests a sensitive or confidential field")
-                .contains("display only the pseudonymized/tokenized/protected value")
+                .contains("include only the protected token")
                 .contains("When the user asks for \"name\" or \"customer name,\"")
                 .contains("use the exact FullName field only when describe_entities exposes")
-                .contains("label its pseudonymized values CustomerNameToken or FullNameToken")
+                .contains("label its protected token column CustomerNameProtected")
+                .contains("the application may render display-safe names in the final UI")
                 .contains("Do not say that the name was excluded when the user explicitly asked for it")
                 .contains("User: \"List 10 customers with their name, city and loyalty tier.\"")
-                .contains("Correct columns: CustomerId, CustomerNameToken, City, LoyaltyTier")
+                .contains("Correct columns: CustomerId, CustomerNameProtected, City, LoyaltyTier")
                 .contains("omitting the requested name")
                 .contains("showing raw")
                 .contains("FullName");
+    }
+
+    @Test
+    void systemPromptKeepsContactFieldsOutOfNormalCustomerNameLookups() throws Exception {
+        String prompt = normalizedPrompt();
+
+        assertThat(prompt)
+                .contains("If FullName, Email, Phone, or another sensitive/confidential field is not exposed")
+                .contains("do not select it, mention its value, or claim that it was found")
+                .contains("For a customer lookup by name")
+                .contains("Do not select Email or Phone unless the user asks for email, phone, contact details")
+                .contains("User: \"Find customer CustomerNameProtected#1\"")
+                .contains("Select the matched customer's approved ID, CustomerNameProtected")
+                .contains("Selecting Email or Phone for a normal customer lookup when the user did not ask for contact details")
+                .contains("inventing missing contact values");
     }
 
     @Test
@@ -90,8 +108,22 @@ class ApplicationResourceTests {
                 .contains("Stable database IDs, when approved for display, must be copied exactly from tool results")
                 .contains("Never invent")
                 .contains("replace, or relabel an ID")
-                .contains("Never put a sensitive-field pseudonym such as CU_001 or CU_002")
-                .contains("in an ID column or relabel a pseudonym as a stable database ID");
+                .contains("Never put a protected sensitive token")
+                .contains("in an ID column or relabel a protected token as a stable database ID");
+    }
+
+    @Test
+    void systemPromptAllowsCurrentProtectedTokensAsSensitiveFieldFilters() throws Exception {
+        String prompt = normalizedPrompt();
+
+        assertThat(prompt)
+                .contains("A protected token in the current user request is the user's supplied value")
+                .contains("copy that current protected token exactly")
+                .contains("FullName, Email, or Phone")
+                .contains("When searching by a protected customer name:")
+                .contains("FullName eq 'CustomerNameProtected#1'")
+                .contains("Never use CustomerNameProtected in a tool filter")
+                .contains("Never use CustomerId unless the user supplied an actual CustomerId");
     }
 
     @Test

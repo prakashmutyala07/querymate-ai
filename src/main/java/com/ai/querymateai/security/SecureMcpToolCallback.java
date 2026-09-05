@@ -52,26 +52,34 @@ final class SecureMcpToolCallback implements ToolCallback {
 
     @Override
     public String call(String toolInput) {
-        return audited(toolInput, detokenizedToolInput -> this.delegate.call(detokenizedToolInput));
+        return audited(toolInput, restoredToolInput -> this.delegate.call(restoredToolInput));
     }
 
     @Override
     public String call(String toolInput, ToolContext toolContext) {
-        return audited(toolInput, detokenizedToolInput -> this.delegate.call(detokenizedToolInput, toolContext));
+        return audited(toolInput, restoredToolInput -> this.delegate.call(restoredToolInput, toolContext));
     }
 
     private String audited(String toolInput, ToolInvocation invocation) {
         String name = getToolDefinition().name();
         this.session.recordToolInvocation();
         this.session.onStep(ToolCallIntent.describeStep(this.objectMapper, name, toolInput));
-        String detokenizedToolInput = this.session.detokenize(toolInput);
         this.traceLogger.traceModelToolRequest(this.session.requestId(), name, toolInput);
+        String restoredToolInput;
+        try {
+            restoredToolInput = this.session.restoreProtectedValues(toolInput);
+        }
+        catch (RuntimeException ex) {
+            logger.warn("MCP tool request protected-value restore failed requestId={} tool={} action=withheld errorType={}",
+                    this.session.requestId(), name, ex.getClass().getSimpleName());
+            return "{\"error\":\"Tool request contained an invalid protected value and was withheld.\"}";
+        }
         this.traceLogger.traceToolRequestAfterDetokenization(this.session.requestId(), toolInput,
-                detokenizedToolInput, this.traceLogger.describeTokenResolution(toolInput, this.session.tokens()));
+                restoredToolInput, this.session.resolvedProtectedValueCount(toolInput, restoredToolInput));
         long startedAt = System.nanoTime();
         String raw;
         try {
-            raw = invocation.call(detokenizedToolInput);
+            raw = invocation.call(restoredToolInput);
         }
         catch (RuntimeException ex) {
             logger.error("MCP/DAB tool failed requestId={} tool={} errorType={}",
@@ -81,8 +89,8 @@ final class SecureMcpToolCallback implements ToolCallback {
         long latencyMs = (System.nanoTime() - startedAt) / 1_000_000L;
         int rows = resultRowCount(raw);
         this.traceLogger.traceRawToolResult(this.session.requestId(), name,
-                ToolCallIntent.entityName(this.objectMapper, detokenizedToolInput), rows, latencyMs, raw);
-        String protectedPayload = this.payloadProtector.protect(raw, this.session.tokens(), this.session.requestId());
+                ToolCallIntent.entityName(this.objectMapper, restoredToolInput), rows, latencyMs, raw);
+        String protectedPayload = this.payloadProtector.protect(raw, this.session.requestId());
         this.traceLogger.traceProtectedToolResult(this.session.requestId(), protectedPayload);
         return protectedPayload;
     }
@@ -93,6 +101,18 @@ final class SecureMcpToolCallback implements ToolCallback {
         }
         try {
             JsonNode root = this.objectMapper.readTree(payload);
+            if (root instanceof ArrayNode array) {
+                for (JsonNode item : array) {
+                    int count = countValueArray(item);
+                    if (count >= 0) {
+                        return count;
+                    }
+                    count = countTextPayload(item);
+                    if (count >= 0) {
+                        return count;
+                    }
+                }
+            }
             int direct = countValueArray(root);
             if (direct >= 0) {
                 return direct;
@@ -100,13 +120,9 @@ final class SecureMcpToolCallback implements ToolCallback {
             JsonNode content = root.get("content");
             if (content instanceof ArrayNode array && !array.isEmpty()) {
                 for (JsonNode item : array) {
-                    JsonNode text = item.get("text");
-                    if (text != null && text.isString()) {
-                        JsonNode nested = this.objectMapper.readTree(text.stringValue());
-                        int nestedCount = countValueArray(nested);
-                        if (nestedCount >= 0) {
-                            return nestedCount;
-                        }
+                    int nestedCount = countTextPayload(item);
+                    if (nestedCount >= 0) {
+                        return nestedCount;
                     }
                 }
             }
@@ -115,6 +131,19 @@ final class SecureMcpToolCallback implements ToolCallback {
             return -1;
         }
         return -1;
+    }
+
+    private int countTextPayload(JsonNode item) {
+        JsonNode text = item == null ? null : item.get("text");
+        if (text == null || !text.isString()) {
+            return -1;
+        }
+        try {
+            return countValueArray(this.objectMapper.readTree(text.stringValue()));
+        }
+        catch (RuntimeException ex) {
+            return -1;
+        }
     }
 
     private static int countValueArray(JsonNode node) {
@@ -135,13 +164,9 @@ final class SecureMcpToolCallback implements ToolCallback {
         return -1;
     }
 
-    private static String rowsDescription(int rows) {
-        return rows >= 0 ? Integer.toString(rows) : "unknown";
-    }
-
     @FunctionalInterface
     private interface ToolInvocation {
 
-        String call(String detokenizedToolInput);
+        String call(String restoredToolInput);
     }
 }

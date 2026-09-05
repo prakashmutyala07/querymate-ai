@@ -60,7 +60,6 @@ public class ChatCoordinator implements ChatOperations {
         long requestStartedAt = System.nanoTime();
 
         progressSink.progress("prepare", "Preparing a safe database request\u2026");
-        this.traceLogger.traceRawUserRequest(requestId, message);
         SensitiveRequestContext guardSession =
                 this.sensitiveDataGuard.newSession(requestId, step -> progressSink.progress("tool", step));
         String protectedMessage = guardSession.protectInput(message);
@@ -72,16 +71,14 @@ public class ChatCoordinator implements ChatOperations {
             ChatModelRunner.Result result = this.modelRunner.run(protectedMessage, this.promptProvider.systemPrompt(),
                     history, tools, guardSession, progressSink, requestId);
             long structuredStartedAt = System.nanoTime();
-            ChatResponse response = ChatResponse.from(resolvedConversationId, result.model(), result.fallbackUsed(),
+            ChatResponse protectedResponse = ChatResponse.from(resolvedConversationId, result.model(), result.fallbackUsed(),
                     result.answer(), guardSession.toolInvocations() > 0);
-            storeSanitizedTurn(resolvedConversationId, protectedMessage, response);
+            ChatResponse uiResponse = guardSession.toUiResponse(protectedResponse);
+            storeSanitizedTurn(resolvedConversationId, protectedMessage, protectedResponse);
             logger.info("Chat response structured requestId={} conversationId={} status={} rows={} "
                     + "memorySanitized=true durationMs={}", requestId, resolvedConversationId,
-                    response.status(), response.rows().size(), elapsedMillis(structuredStartedAt));
-            ChatResponse uiResponse = revealForTrustedLocalDisplay(response, guardSession);
-            this.traceLogger.traceFinalUiResponse(requestId, response, uiResponse);
-            logger.debug("Chat request completed requestId={} totalChatDurationMs={}", requestId,
-                    elapsedMillis(requestStartedAt));
+                    protectedResponse.status(), protectedResponse.rows().size(), elapsedMillis(structuredStartedAt));
+            this.traceLogger.traceFinalUiResponse(requestId, protectedResponse, uiResponse);
             return uiResponse;
         }
         catch (RuntimeException ex) {
@@ -116,19 +113,6 @@ public class ChatCoordinator implements ChatOperations {
         return "status=" + response.status() + "; answer=" + response.message()
                 + "; columns=" + response.columns() + "; rows=" + response.rows()
                 + "; dataNotes=" + response.dataNotes() + "; followUpQuestion=" + response.followUpQuestion();
-    }
-
-    private static ChatResponse revealForTrustedLocalDisplay(ChatResponse response,
-            SensitiveRequestContext guardSession) {
-        return new ChatResponse(response.conversationId(), response.model(), response.fallbackUsed(),
-                response.status(), guardSession.revealForTrustedLocalDisplay(response.message()),
-                response.columns().stream().map(guardSession::revealForTrustedLocalDisplay).toList(),
-                response.rows().stream()
-                        .map(row -> row.stream().map(guardSession::revealForTrustedLocalDisplay).toList())
-                        .toList(),
-                response.usedDatabaseTools(), response.partialResults(),
-                guardSession.revealForTrustedLocalDisplay(response.dataNotes()),
-                guardSession.revealForTrustedLocalDisplay(response.followUpQuestion()));
     }
 
     private static long elapsedMillis(long startedAtNanos) {

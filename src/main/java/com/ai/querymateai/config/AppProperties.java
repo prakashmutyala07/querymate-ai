@@ -9,6 +9,7 @@ public record AppProperties(Models models, Execution execution, Memory memory,
         Security security, Logging logging, Ai ai, List<SensitiveField> sensitiveFields) {
 
     public AppProperties {
+        security = security == null ? new Security() : security;
         logging = logging == null ? new Logging(false) : logging;
         ai = ai == null ? new Ai(null) : ai;
         sensitiveFields = sensitiveFields == null ? List.of() : List.copyOf(sensitiveFields);
@@ -36,7 +37,7 @@ public record AppProperties(Models models, Execution execution, Memory memory,
     public record Memory(int maxMessages) {
     }
 
-    public record Security(String tokenSecretKey) {
+    public record Security() {
     }
 
     public record Logging(boolean logSensitiveData) {
@@ -57,8 +58,8 @@ public record AppProperties(Models models, Execution execution, Memory memory,
     }
 
     /**
-     * One sensitive {@code entity.field} pair. {@code prefix} is the human-readable
-     * marker on the emitted token, e.g. {@code CU_a3f9d2}.
+     * One sensitive {@code entity.field} pair that must be encrypted when returned
+     * by database tools.
      */
     public record SensitiveField(String entity, String field, String prefix) {
 

@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.util.StringUtils;
 
@@ -11,6 +13,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 final class ToolCallIntent {
+
+    private static final Pattern PROTECTED_VALUE =
+            Pattern.compile("\\b(?:CustomerName|Email|Phone|SensitiveValue)Protected#\\d+\\b");
 
     private ToolCallIntent() {
     }
@@ -52,8 +57,17 @@ final class ToolCallIntent {
         }
     }
 
-    static int resolvedTokenCount(String protectedInput, String detokenizedInput) {
-        return SensitiveTokenStore.resolvedTokenCount(protectedInput, detokenizedInput);
+    static int resolvedTokenCount(String protectedInput, String decryptedInput) {
+        if (!StringUtils.hasText(protectedInput) || !StringUtils.hasText(decryptedInput)
+                || protectedInput.equals(decryptedInput)) {
+            return 0;
+        }
+        Matcher matcher = PROTECTED_VALUE.matcher(protectedInput);
+        int count = 0;
+        while (matcher.find()) {
+            count++;
+        }
+        return count;
     }
 
     static List<String> keys(ObjectMapper objectMapper, String toolInput) {

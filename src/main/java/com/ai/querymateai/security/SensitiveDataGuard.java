@@ -1,6 +1,5 @@
 package com.ai.querymateai.security;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -36,9 +35,7 @@ public class SensitiveDataGuard {
     /** Lower-cased field name -> token prefix. Matching is by field name across all entities. */
     private final Map<String, String> prefixByField;
 
-    private final byte[] secretKey;
-
-    private final PiiDetector piiDetector = new PiiDetector();
+    private final JavaPiiProtector piiProtector;
 
     private final SensitivePayloadProtector payloadProtector;
 
@@ -49,16 +46,11 @@ public class SensitiveDataGuard {
         this.prefixByField = properties.sensitiveFields().stream()
                 .collect(Collectors.toMap(field -> field.field().toLowerCase(),
                         AppProperties.SensitiveField::prefixOrDefault, (first, second) -> first));
-        String configured = properties.security().tokenSecretKey();
-        if (!StringUtils.hasText(configured) && !this.prefixByField.isEmpty()) {
-            throw new IllegalStateException(
-                    "TOKEN_SECRET_KEY must be set when app.sensitive-fields is non-empty.");
-        }
-        this.secretKey = StringUtils.hasText(configured)
-                ? configured.getBytes(StandardCharsets.UTF_8) : new byte[0];
-        this.payloadProtector = new SensitivePayloadProtector(objectMapper, this.prefixByField);
-        logger.info("Sensitive-field redaction active for {} field(s): {}", this.prefixByField.size(),
-                this.prefixByField.keySet());
+        this.piiProtector = new JavaPiiProtector();
+        this.payloadProtector = new SensitivePayloadProtector(objectMapper, this.prefixByField,
+                this.piiProtector);
+        logger.info("Java request-local PII protection active for {} configured sensitive field(s): {}",
+                this.prefixByField.size(), this.prefixByField.keySet());
     }
 
     public SensitiveRequestContext newSession() {
@@ -74,8 +66,8 @@ public class SensitiveDataGuard {
     /** @param onStep receives a short human-readable note each time a tool is about to run. */
     public SensitiveRequestContext newSession(String requestId, java.util.function.Consumer<String> onStep) {
         return new SensitiveRequestContext(StringUtils.hasText(requestId) ? requestId : "none", onStep,
-                this.secretKey, this.objectMapper, this.traceLogger, this.prefixByField,
-                this.piiDetector, this.payloadProtector);
+                this.objectMapper, this.traceLogger, this.piiProtector, this.payloadProtector,
+                this.prefixByField.keySet());
     }
 
     public Set<String> protectedFields() {

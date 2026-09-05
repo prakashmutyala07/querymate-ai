@@ -149,12 +149,22 @@ public class ChatModelRunner {
                     List.of(), List.of(), false, "", "");
         }
         return new ChatResponse.ModelAnswer(answer.status(), guardSession.protectOutput(answer.answer()),
-                answer.columns().stream().map(guardSession::protectOutput).toList(),
+                answer.columns(),
                 answer.rows().stream()
-                        .map(row -> row.stream().map(guardSession::protectOutput).toList())
+                        .map(row -> protectRow(answer.columns(), row, guardSession))
                         .toList(),
                 answer.partialResults(), guardSession.protectOutput(answer.dataNotes()),
                 guardSession.protectOutput(answer.followUpQuestion()));
+    }
+
+    private static List<String> protectRow(List<String> columns, List<String> row,
+            SensitiveRequestContext guardSession) {
+        java.util.ArrayList<String> protectedRow = new java.util.ArrayList<>(row.size());
+        for (int i = 0; i < row.size(); i++) {
+            String column = i < columns.size() ? columns.get(i) : "";
+            protectedRow.add(guardSession.protectStructuredCell(column, row.get(i)));
+        }
+        return protectedRow;
     }
 
     OpenAiChatOptions.Builder chatOptions(String model, ToolCallback[] tools) {

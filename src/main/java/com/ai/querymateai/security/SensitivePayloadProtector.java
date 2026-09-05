@@ -21,18 +21,22 @@ final class SensitivePayloadProtector {
 
     private final Map<String, String> prefixByField;
 
-    SensitivePayloadProtector(ObjectMapper objectMapper, Map<String, String> prefixByField) {
+    private final JavaPiiProtector piiProtector;
+
+    SensitivePayloadProtector(ObjectMapper objectMapper, Map<String, String> prefixByField,
+            JavaPiiProtector piiProtector) {
         this.objectMapper = objectMapper;
         this.prefixByField = prefixByField;
+        this.piiProtector = piiProtector;
     }
 
-    String protect(String payload, SensitiveTokenStore tokens, String requestId) {
+    String protect(String payload, String requestId) {
         if (!StringUtils.hasText(payload)) {
             return payload;
         }
         try {
             JsonNode root = this.objectMapper.readTree(payload);
-            walk(root, tokens);
+            walk(root);
             return this.objectMapper.writeValueAsString(root);
         }
         catch (RuntimeException ex) {
@@ -42,7 +46,7 @@ final class SensitivePayloadProtector {
         }
     }
 
-    private void walk(JsonNode node, SensitiveTokenStore tokens) {
+    private void walk(JsonNode node) {
         if (node instanceof ObjectNode object) {
             List<String> names = new ArrayList<>(object.propertyNames());
             for (String name : names) {
@@ -52,25 +56,25 @@ final class SensitivePayloadProtector {
                 }
                 String prefix = this.prefixByField.get(name.toLowerCase());
                 if (prefix != null && child.isString() && StringUtils.hasText(child.stringValue())) {
-                    object.put(name, tokens.tokenFor(name, prefix, child.stringValue()));
+                    object.put(name, this.piiProtector.protectKnownSensitiveValue(child.stringValue(), name));
                 }
                 else if (child.isString()) {
-                    String nested = protectEmbedded(child.stringValue(), tokens);
+                    String nested = protectEmbedded(child.stringValue());
                     if (nested != null) {
                         object.put(name, nested);
                     }
                 }
                 else {
-                    walk(child, tokens);
+                    walk(child);
                 }
             }
         }
         else if (node instanceof ArrayNode array) {
-            array.forEach(child -> walk(child, tokens));
+            array.forEach(this::walk);
         }
     }
 
-    private String protectEmbedded(String raw, SensitiveTokenStore tokens) {
+    private String protectEmbedded(String raw) {
         if (raw == null) {
             return null;
         }
@@ -80,7 +84,7 @@ final class SensitivePayloadProtector {
         }
         try {
             JsonNode nested = this.objectMapper.readTree(trimmed);
-            walk(nested, tokens);
+            walk(nested);
             return this.objectMapper.writeValueAsString(nested);
         }
         catch (RuntimeException ex) {

@@ -65,32 +65,21 @@ app:
     response-format: ${APP_RESPONSE_FORMAT:prompt_json}
   memory:
     max-messages: ${APP_MEMORY_MAX_MESSAGES:20}
-  security:
-    token-secret-key: ${TOKEN_SECRET_KEY:}
   ai:
     trace:
       enabled: ${APP_AI_TRACE_ENABLED:false}
       include-sensitive-values: ${APP_AI_TRACE_INCLUDE_SENSITIVE_VALUES:false}
       max-payload-chars: ${APP_AI_TRACE_MAX_PAYLOAD_CHARS:20000}
-  # entity.field pairs tokenized before any tool result reaches the model.
+  # entity.field pairs protected before any tool result reaches the model.
   # City/StateProvince/Country are deliberately NOT listed: they are coarse
   # geography needed for regional aggregation, not direct identifiers.
   sensitive-fields:
     - entity: Customer
       field: FullName
-      prefix: CU
     - entity: Customer
       field: Email
-      prefix: EM
     - entity: Customer
       field: Phone
-      prefix: PH
-    - entity: Payment
-      field: TransactionReference
-      prefix: TX
-    - entity: Shipment
-      field: TrackingNumber
-      prefix: TR
 
 management:
   endpoints:

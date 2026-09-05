@@ -1,7 +1,6 @@
 package com.ai.querymateai.trace;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -17,8 +16,6 @@ import org.springframework.stereotype.Component;
 
 import com.ai.querymateai.chat.ChatResponse;
 import com.ai.querymateai.config.AppProperties;
-import com.ai.querymateai.security.SensitiveTokenStore;
-
 /**
  * Single console trace for a local AI request. It is deliberately INFO-level so
  * local developers can read one request flow without changing logger levels.
@@ -74,27 +71,6 @@ public class LocalAiTraceLogger {
                 && this.activeProfiles.stream().anyMatch(LOCAL_PROFILES::contains);
     }
 
-    public void traceRawUserRequest(String requestId, String rawMessage) {
-        trace(requestId, 1, "RAW USER REQUEST", includeSensitiveValues() ? rawMessage : "<raw user request hidden>");
-    }
-
-    public void tracePiiProtection(String requestId, String before, String detected, String tokenMap, String after) {
-        String body = """
-                Before:
-                %s
-
-                Detected:
-                %s
-
-                After:
-                %s
-                """.formatted(includeSensitiveValues() ? before : "<raw input hidden>", detected, after);
-        if (includeSensitiveValues()) {
-            body += "\nToken map:\n" + tokenMap;
-        }
-        trace(requestId, 2, "PII PROTECTION", body);
-    }
-
     public void traceLlmRequest(String requestId, String provider, String model, String systemPrompt,
             List<Message> history, String userMessage, ToolCallback[] tools) {
         String toolNames = tools == null ? "[]" : List.of(tools).stream()
@@ -117,11 +93,11 @@ public class LocalAiTraceLogger {
                 """.formatted(provider, model, systemPrompt,
                 history == null ? List.of() : history.stream().map(Message::getText).toList(),
                 userMessage, toolNames);
-        trace(requestId, 3, "LLM INPUT", body);
+        trace(requestId, "LLM REQUEST - TO MODEL", body);
     }
 
     public void traceModelToolRequest(String requestId, String toolName, String arguments) {
-        trace(requestId, 4, "MODEL TOOL REQUEST", """
+        trace(requestId, "DAB REQUEST - FROM MODEL", """
                 Tool:
                 %s
 
@@ -131,25 +107,22 @@ public class LocalAiTraceLogger {
     }
 
     public void traceToolRequestAfterDetokenization(String requestId, String before, String after,
-            String tokenResolution) {
-        trace(requestId, 5, "TOOL REQUEST AFTER DETOKENIZATION", """
-                Before:
+            int resolvedValues) {
+        trace(requestId, "DAB REQUEST - BEFORE EXECUTION", """
+                Protected arguments from model:
                 %s
 
-                After:
+                Arguments sent to DAB:
                 %s
 
-                Resolved tokens:
-                %s
-
-                Actual SQL:
-                Not available from Spring application. Logged MCP/DAB tool arguments instead.
-                """.formatted(before, includeSensitiveValues() ? after : before, tokenResolution));
+                Resolved protected values:
+                %d
+                """.formatted(before, includeSensitiveValues() ? after : before, resolvedValues));
     }
 
     public void traceRawToolResult(String requestId, String toolName, String entity, int rows, long durationMs,
             String rawResult) {
-        trace(requestId, 6, "RAW DAB RESULT", """
+        trace(requestId, "DAB RESPONSE - FROM DAB", """
                 Tool: %s
                 Entity: %s
                 Rows: %s
@@ -161,57 +134,28 @@ public class LocalAiTraceLogger {
     }
 
     public void traceProtectedToolResult(String requestId, String protectedResult) {
-        trace(requestId, 7, "PROTECTED DAB RESULT", protectedResult);
+        trace(requestId, "DAB RESPONSE - TO MODEL", protectedResult);
     }
 
     public void traceFinalModelResponse(String requestId, String rawModelResponse, String protectedModelResponse) {
-        trace(requestId, 8, "FINAL MODEL RESPONSE",
+        trace(requestId, "LLM RESPONSE - FROM MODEL",
                 includeSensitiveValues() ? rawModelResponse : protectedModelResponse);
     }
 
     public void traceFinalUiResponse(String requestId, ChatResponse protectedResponse, ChatResponse uiResponse) {
-        trace(requestId, 9, "FINAL UI RESPONSE",
+        trace(requestId, "UI RESPONSE - TO BROWSER",
                 String.valueOf(includeSensitiveValues() ? uiResponse : protectedResponse));
     }
 
-    public String describeNewTokens(SensitiveTokenStore tokens, Map<String, String> existingTokens) {
-        Map<String, String> values = newTokenSnapshot(tokens, existingTokens);
-        if (values.isEmpty()) {
-            return "none";
-        }
-        if (includeSensitiveValues()) {
-            return values.entrySet().stream()
-                    .map(entry -> entry.getValue() + " -> " + entry.getKey())
-                    .collect(Collectors.joining("\n"));
-        }
-        return "entities=" + values.size() + " tokenTypes=" + tokens.prefixes();
-    }
-
-    public String describeTokenResolution(String protectedText, SensitiveTokenStore tokens) {
-        Map<String, String> matches = tokens.snapshot().entrySet().stream()
-                .filter(entry -> protectedText != null && protectedText.contains(entry.getKey()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                        (first, second) -> first, java.util.LinkedHashMap::new));
-        if (matches.isEmpty()) {
-            return "none";
-        }
-        if (includeSensitiveValues()) {
-            return matches.entrySet().stream()
-                    .map(entry -> entry.getKey() + " -> " + entry.getValue())
-                    .collect(Collectors.joining("\n"));
-        }
-        return "resolvedTokens=" + matches.size();
-    }
-
-    private void trace(String requestId, int step, String title, String body) {
+    private void trace(String requestId, String title, String body) {
         if (!enabled()) {
             return;
         }
         logger.info("""
                 ============================================================
-                [AI TRACE] requestId={} STEP {} - {}
+                [AI TRACE] requestId={} {}
                 ============================================================
-                {}""", requestId, step, title, truncate(redactSecrets(body)));
+                {}""", requestId, title, truncate(redactSecrets(body)));
     }
 
     private String truncate(String value) {
@@ -235,11 +179,4 @@ public class LocalAiTraceLogger {
         return CONNECTION_PASSWORD.matcher(redacted).replaceAll("$1[REDACTED_SECRET]");
     }
 
-    private static Map<String, String> newTokenSnapshot(SensitiveTokenStore tokens,
-            Map<String, String> existingTokens) {
-        return tokens.snapshot().entrySet().stream()
-                .filter(entry -> !existingTokens.containsKey(entry.getKey()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                        (first, second) -> first, java.util.LinkedHashMap::new));
-    }
 }

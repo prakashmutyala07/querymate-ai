@@ -29,6 +29,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 class ChatModelRunnerTests {
 
+    private static final String PROTECTED_PATTERN =
+            "\\b(?:CustomerName|Email|Phone|SensitiveValue)Protected#\\d+\\b";
+
     private static final String VALID_ANSWER = """
             {"status":"ANSWER","answer":"Done.","columns":[],"rows":[],
             "partialResults":false,"dataNotes":"","followUpQuestion":""}
@@ -145,20 +148,23 @@ class ChatModelRunnerTests {
     void structuredResponseKeepsCustomerIdSeparateFromExplicitlyRequestedNameToken() {
         Fixture fixture = fixture(false, AppProperties.ResponseFormat.JSON_SCHEMA, prompt -> response("""
                 {"status":"ANSWER","answer":"Found one customer.",
-                "columns":["CustomerId","CustomerNameToken","City","LoyaltyTier"],
-                "rows":[["42","CU_ab12cd","Austin","Gold"]],
+                "columns":["CustomerId","CustomerNameProtected","City","LoyaltyTier"],
+                "rows":[["42","John Smith","Austin","Gold"]],
                 "partialResults":false,"dataNotes":"","followUpQuestion":""}
                 """));
 
         ChatResponse.ModelAnswer answer = fixture.run().answer();
 
         assertThat(answer.columns())
-                .containsExactly("CustomerId", "CustomerNameToken", "City", "LoyaltyTier");
-        assertThat(answer.rows()).containsExactly(List.of("42", "CU_ab12cd", "Austin", "Gold"));
+                .containsExactly("CustomerId", "CustomerNameProtected", "City", "LoyaltyTier");
+        assertThat(answer.rows().getFirst().getFirst()).isEqualTo("42");
+        assertThat(answer.rows().getFirst().get(1)).containsPattern(PROTECTED_PATTERN).doesNotContain("John Smith");
+        assertThat(answer.rows().getFirst().get(2)).isEqualTo("Austin");
+        assertThat(answer.rows().getFirst().get(3)).isEqualTo("Gold");
         assertThat(answer.rows().getFirst().getFirst()).as("CustomerId must remain the stable database ID")
-                .doesNotStartWith("CU_");
-        assertThat(answer.rows().getFirst().get(1)).as("explicitly requested name may be pseudonymized")
-                .startsWith("CU_");
+                .doesNotContain("Protected#");
+        assertThat(answer.rows().getFirst().get(1)).as("explicitly requested name stays protected")
+                .contains("Protected#");
     }
 
     private static Fixture fixture(boolean primaryRetryEnabled, AppProperties.ResponseFormat responseFormat,
@@ -168,7 +174,7 @@ class ChatModelRunnerTests {
                 new AppProperties.Execution(true, primaryRetryEnabled, 1200, 0.1, Duration.ofSeconds(10),
                         responseFormat),
                 new AppProperties.Memory(20),
-                new AppProperties.Security("unit-test-secret"), new AppProperties.Logging(false),
+                new AppProperties.Security(), new AppProperties.Logging(false),
                 new AppProperties.Ai(new AppProperties.Trace(false, false, 20_000)), List.of());
         LocalAiTraceLogger traceLogger = new LocalAiTraceLogger(properties,
                 new org.springframework.mock.env.MockEnvironment());
